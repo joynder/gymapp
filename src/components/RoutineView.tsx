@@ -27,7 +27,6 @@ import {
 
 interface RoutineViewProps {
   routine: Routine | null;
-  activeUserName: string;
   preferences: UserPreferences;
   onOpenPreferences: () => void;
   onOpenExerciseModal: (ex: Exercise) => void;
@@ -39,7 +38,6 @@ interface RoutineViewProps {
 
 export const RoutineView: React.FC<RoutineViewProps> = ({
   routine,
-  activeUserName,
   preferences,
   onOpenPreferences,
   onOpenExerciseModal,
@@ -76,7 +74,6 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
       <div className="py-4">
         <AIAssistantWizard
           currentPreferences={preferences}
-          userName={activeUserName}
           onComplete={(updatedPrefs) => {
             onGenerateWithAI(updatedPrefs);
             setShowAIWizard(false);

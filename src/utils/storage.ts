@@ -1,14 +1,15 @@
 import type {
-  AppDatabase,
   Routine,
-  UserAccount,
   UserPreferences,
   WorkoutSession,
 } from '../types';
 
-const STORAGE_DB_KEY = 'gymapp_multiuser_database_v2';
+const PREFERENCES_KEY = 'gymapp_preferences_v1';
+const ROUTINE_KEY = 'gymapp_routine_v1';
+const SESSIONS_KEY = 'gymapp_sessions_v1';
+const LEGACY_DB_KEY = 'gymapp_multiuser_database_v2';
 
-const DEFAULT_PREFERENCES: UserPreferences = {
+export const DEFAULT_PREFERENCES: UserPreferences = {
   bodyWeightKg: 75,
   goal: 'ipertrofia',
   lifestyle: 'moderato',
@@ -39,161 +40,109 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   ],
 };
 
-function createInitialDatabase(): AppDatabase {
-  const initialUserId = 'user_' + Date.now();
-  const initialUser: UserAccount = {
-    id: initialUserId,
-    username: 'alessandro',
-    name: 'Alessandro',
-    createdAt: new Date().toISOString(),
-    preferences: DEFAULT_PREFERENCES,
-    routine: null,
-    sessions: [],
-  };
-
-  return {
-    activeUserId: initialUserId,
-    users: {
-      [initialUserId]: initialUser,
-    },
-  };
-}
-
-export function getAppDatabase(): AppDatabase {
+// Automatic one-time migration from legacy multi-account storage
+function checkLegacyMigration(): void {
   try {
-    const raw = localStorage.getItem(STORAGE_DB_KEY);
-    if (raw) {
-      const parsed: AppDatabase = JSON.parse(raw);
-      if (parsed.users && parsed.activeUserId && parsed.users[parsed.activeUserId]) {
-        return parsed;
+    if (!localStorage.getItem(PREFERENCES_KEY) && !localStorage.getItem(ROUTINE_KEY)) {
+      const raw = localStorage.getItem(LEGACY_DB_KEY);
+      if (raw) {
+        const legacy = JSON.parse(raw);
+        if (legacy && legacy.users) {
+          const user = legacy.users[legacy.activeUserId] || Object.values(legacy.users)[0];
+          if (user) {
+            if (user.preferences) {
+              localStorage.setItem(PREFERENCES_KEY, JSON.stringify(user.preferences));
+            }
+            if (user.routine) {
+              localStorage.setItem(ROUTINE_KEY, JSON.stringify(user.routine));
+            }
+            if (user.sessions && Array.isArray(user.sessions)) {
+              localStorage.setItem(SESSIONS_KEY, JSON.stringify(user.sessions));
+            }
+          }
+        }
       }
     }
   } catch (e) {
-    console.error('Error parsing AppDatabase', e);
-  }
-  const initial = createInitialDatabase();
-  saveAppDatabase(initial);
-  return initial;
-}
-
-export function saveAppDatabase(db: AppDatabase): void {
-  try {
-    localStorage.setItem(STORAGE_DB_KEY, JSON.stringify(db));
-  } catch (e) {
-    console.error('Error saving AppDatabase', e);
+    console.error('Migration error', e);
   }
 }
 
-export function getActiveUser(): UserAccount {
-  const db = getAppDatabase();
-  return db.users[db.activeUserId] || Object.values(db.users)[0];
-}
+// Run migration check once on load
+checkLegacyMigration();
 
-export function switchActiveUser(userId: string): UserAccount {
-  const db = getAppDatabase();
-  if (db.users[userId]) {
-    db.activeUserId = userId;
-    saveAppDatabase(db);
-    return db.users[userId];
-  }
-  return getActiveUser();
-}
-
-export function createUserAccount(
-  username: string,
-  name: string,
-  bodyWeightKg = 75
-): UserAccount {
-  const db = getAppDatabase();
-  const newId = 'user_' + Date.now();
-  const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
-
-  const newUser: UserAccount = {
-    id: newId,
-    username: cleanUsername,
-    name: name.trim() || cleanUsername,
-    createdAt: new Date().toISOString(),
-    preferences: {
-      ...DEFAULT_PREFERENCES,
-      bodyWeightKg,
-    },
-    routine: null,
-    sessions: [],
-  };
-
-  db.users[newId] = newUser;
-  db.activeUserId = newId;
-  saveAppDatabase(db);
-  return newUser;
-}
-
-export function deleteUserAccount(userId: string): void {
-  const db = getAppDatabase();
-  if (Object.keys(db.users).length <= 1) {
-    alert('Impossibile eliminare l\'unico account presente.');
-    return;
-  }
-  delete db.users[userId];
-  if (db.activeUserId === userId) {
-    db.activeUserId = Object.keys(db.users)[0];
-  }
-  saveAppDatabase(db);
-}
-
-export function updateActiveUser(updater: (user: UserAccount) => UserAccount): UserAccount {
-  const db = getAppDatabase();
-  const current = db.users[db.activeUserId];
-  if (current) {
-    const updated = updater(current);
-    db.users[db.activeUserId] = updated;
-    saveAppDatabase(db);
-    return updated;
-  }
-  return current;
-}
-
-// Per-User Wrappers
 export function loadUserPreferences(): UserPreferences {
-  const u = getActiveUser();
-  return u.preferences || DEFAULT_PREFERENCES;
+  try {
+    const raw = localStorage.getItem(PREFERENCES_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error loading preferences', e);
+  }
+  return DEFAULT_PREFERENCES;
 }
 
 export function saveUserPreferences(prefs: UserPreferences): void {
-  updateActiveUser((user) => ({
-    ...user,
-    preferences: prefs,
-  }));
+  try {
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs));
+  } catch (e) {
+    console.error('Error saving preferences', e);
+  }
 }
 
 export function loadActiveRoutine(): Routine | null {
-  const u = getActiveUser();
-  return u.routine;
+  try {
+    const raw = localStorage.getItem(ROUTINE_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error loading routine', e);
+  }
+  return null;
 }
 
-export function saveActiveRoutine(routine: Routine): void {
-  updateActiveUser((user) => ({
-    ...user,
-    routine,
-  }));
+export function saveActiveRoutine(routine: Routine | null): void {
+  try {
+    if (!routine) {
+      localStorage.removeItem(ROUTINE_KEY);
+    } else {
+      localStorage.setItem(ROUTINE_KEY, JSON.stringify(routine));
+    }
+  } catch (e) {
+    console.error('Error saving routine', e);
+  }
 }
 
 export function loadWorkoutSessions(): WorkoutSession[] {
-  const u = getActiveUser();
-  return u.sessions || [];
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error loading sessions', e);
+  }
+  return [];
 }
 
 export function saveWorkoutSession(session: WorkoutSession): void {
-  updateActiveUser((user) => ({
-    ...user,
-    sessions: [session, ...(user.sessions || [])],
-  }));
+  try {
+    const sessions = loadWorkoutSessions();
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify([session, ...sessions]));
+  } catch (e) {
+    console.error('Error saving session', e);
+  }
 }
 
 export function deleteWorkoutSession(sessionId: string): void {
-  updateActiveUser((user) => ({
-    ...user,
-    sessions: (user.sessions || []).filter((s) => s.id !== sessionId),
-  }));
+  try {
+    const sessions = loadWorkoutSessions().filter((s) => s.id !== sessionId);
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  } catch (e) {
+    console.error('Error deleting session', e);
+  }
 }
 
 export function getLastPerformance(
@@ -258,17 +207,26 @@ export function getExerciseHistory(exerciseId: string): {
   return history;
 }
 
-// Git Data Exporter / Importer
+// Backup JSON exporter / importer
 export function exportGitDatabaseJSON(): string {
-  const db = getAppDatabase();
-  return JSON.stringify(db, null, 2);
+  const backup = {
+    preferences: loadUserPreferences(),
+    routine: loadActiveRoutine(),
+    sessions: loadWorkoutSessions(),
+    exportedAt: new Date().toISOString(),
+  };
+  return JSON.stringify(backup, null, 2);
 }
 
 export function importGitDatabaseJSON(jsonStr: string): boolean {
   try {
     const parsed = JSON.parse(jsonStr);
-    if (parsed && parsed.users && parsed.activeUserId) {
-      saveAppDatabase(parsed);
+    if (parsed) {
+      if (parsed.preferences) saveUserPreferences(parsed.preferences);
+      if (parsed.routine) saveActiveRoutine(parsed.routine);
+      if (parsed.sessions && Array.isArray(parsed.sessions)) {
+        localStorage.setItem(SESSIONS_KEY, JSON.stringify(parsed.sessions));
+      }
       return true;
     }
   } catch (e) {

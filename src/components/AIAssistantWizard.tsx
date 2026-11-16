@@ -17,14 +17,12 @@ import {
 
 interface AIAssistantWizardProps {
   currentPreferences: UserPreferences;
-  userName: string;
   onComplete: (prefs: UserPreferences) => void;
   onCancel?: () => void;
 }
 
 export const AIAssistantWizard: React.FC<AIAssistantWizardProps> = ({
   currentPreferences,
-  userName,
   onComplete,
   onCancel,
 }) => {
@@ -102,7 +100,7 @@ export const AIAssistantWizard: React.FC<AIAssistantWizardProps> = ({
         <div className="space-y-5 animate-in fade-in duration-200">
           <div className="p-3.5 bg-zinc-900/80 rounded-2xl border border-zinc-800">
             <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
-              Ciao <strong className="text-orange-400">{userName}</strong>! Per iniziare a preparare la tua scheda e stimare i carichi di partenza corretti, qual è il tuo peso corporeo attuale?
+              Benvenuto! Per iniziare a preparare la tua scheda e stimare i carichi di partenza corretti, indica il tuo peso corporeo attuale:
             </p>
           </div>
 

@@ -3,10 +3,8 @@ import type {
   Exercise,
   Routine,
   UserPreferences,
-  UserAccount,
 } from './types';
 import {
-  getActiveUser,
   loadActiveRoutine,
   loadUserPreferences,
   saveActiveRoutine,
@@ -21,11 +19,9 @@ import { LibraryView } from './components/LibraryView';
 import { HistoryView } from './components/HistoryView';
 import { ExerciseModal } from './components/ExerciseModal';
 import { RestTimer } from './components/RestTimer';
-import { AccountModal } from './components/AccountModal';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<TabType>('routine');
-  const [activeUser, setActiveUser] = useState<UserAccount>(() => getActiveUser());
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
   const [routine, setRoutine] = useState<Routine | null>(() => {
     return loadActiveRoutine();
@@ -34,17 +30,6 @@ export default function App() {
   const [inspectedExercise, setInspectedExercise] = useState<Exercise | null>(null);
   const [isTimerOpen, setIsTimerOpen] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(90);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-
-  // Sync state when active account switches
-  const handleAccountChanged = () => {
-    const current = getActiveUser();
-    setActiveUser(current);
-    const prefs = loadUserPreferences();
-    setPreferences(prefs);
-    const currentRoutine = loadActiveRoutine();
-    setRoutine(currentRoutine);
-  };
 
   const handleUpdateRoutine = (updated: Routine) => {
     setRoutine(updated);
@@ -54,7 +39,6 @@ export default function App() {
   const handleSavePreferences = (updated: UserPreferences) => {
     setPreferences(updated);
     saveUserPreferences(updated);
-    setActiveUser(getActiveUser());
   };
 
   const handleGenerateRoutine = (updatedPrefs: UserPreferences) => {
@@ -77,15 +61,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    const theme = preferences.themeColor || activeUser.preferences?.themeColor || 'orange';
+    const theme = preferences.themeColor || 'orange';
     document.documentElement.setAttribute('data-theme', theme);
-  }, [preferences.themeColor, activeUser]);
+  }, [preferences.themeColor]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setInspectedExercise(null);
-        setIsAccountModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -93,13 +76,11 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex flex-col font-sans selection:bg-orange-600 selection:text-white">
+    <div className="min-h-screen bg-black text-zinc-100 flex flex-col font-sans selection:bg-orange-600 selection:text-white pb-20 md:pb-0">
       {/* Top Navbar */}
       <Navbar
         currentTab={currentTab}
         onTabChange={setCurrentTab}
-        activeUser={activeUser}
-        onOpenAccountModal={() => setIsAccountModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -107,7 +88,6 @@ export default function App() {
         {currentTab === 'routine' && (
           <RoutineView
             routine={routine}
-            activeUserName={activeUser.name}
             preferences={preferences}
             onOpenPreferences={() => setCurrentTab('preferences')}
             onOpenExerciseModal={setInspectedExercise}
@@ -144,13 +124,6 @@ export default function App() {
         exercise={inspectedExercise}
         userBodyWeightKg={preferences.bodyWeightKg || 75}
         onClose={() => setInspectedExercise(null)}
-      />
-
-      {/* Account Management Modal */}
-      <AccountModal
-        isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
-        onAccountChanged={handleAccountChanged}
       />
 
       {/* Rest Timer */}

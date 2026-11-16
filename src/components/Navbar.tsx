@@ -1,28 +1,23 @@
 import React from 'react';
 import { Calendar, Library, History, Settings2 } from 'lucide-react';
-import type { UserAccount } from '../types';
 
 export type TabType = 'routine' | 'preferences' | 'library' | 'history';
 
 interface NavbarProps {
   currentTab: TabType;
   onTabChange: (tab: TabType) => void;
-  activeUser: UserAccount;
-  onOpenAccountModal: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onTabChange,
-  activeUser,
-  onOpenAccountModal,
 }) => {
   return (
     <>
       {/* Top Header Bar */}
       <header className="sticky top-0 z-30 bg-zinc-950/90 backdrop-blur border-b border-zinc-800/80">
         <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
-          {/* Simple, Non-AI Brand Title */}
+          {/* Brand Title */}
           <button
             onClick={() => onTabChange('routine')}
             className="text-base font-bold tracking-tight text-white hover:text-orange-400 transition-colors"
@@ -77,15 +72,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           </nav>
 
-          {/* User Account Switcher Button */}
-          <div>
-            <button
-              type="button"
-              onClick={onOpenAccountModal}
-              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-medium transition-colors"
-            >
-              {activeUser?.name || 'Account'}
-            </button>
+          <div className="hidden md:block text-xs text-zinc-500 font-mono">
+            Locale
           </div>
         </div>
       </header>
