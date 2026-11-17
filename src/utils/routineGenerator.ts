@@ -7,7 +7,6 @@ import type {
   PlannedExercise,
   Routine,
   RoutineDay,
-  SplitType,
   UserPreferences,
 } from '../types';
 
@@ -69,10 +68,8 @@ export function getRepsAndRestForGoalAndLifestyle(
 
   // 2. Lifestyle recovery modulation
   if (lifestyle === 'sedentario') {
-    // Sedentary individuals need slightly longer recovery between heavy compound sets for CNS recovery
     if (isCompound) restSeconds += 15;
   } else if (lifestyle === 'attivo') {
-    // Very active individuals have higher cardiovascular efficiency, keep density high
     if (restSeconds > 60 && goal !== 'forza') {
       restSeconds = Math.max(45, restSeconds - 15);
     }
@@ -91,7 +88,7 @@ export function calculateBaseWeight(
   goal: GoalType
 ): number {
   if (exercise.isBodyweight) {
-    return 0; // Esercizio a corpo libero puro
+    return 0; // Corpo libero puro
   }
 
   const levelKey =
@@ -101,29 +98,46 @@ export function calculateBaseWeight(
       ? 'intermedio'
       : 'avanzato';
 
-  const multiplier = exercise.bodyWeightMultiplier[levelKey] || 0.4;
-  let estimatedWeight = bodyWeightKg * multiplier;
+  let multiplier = exercise.bodyWeightMultiplier[levelKey] || 0.4;
 
-  // Fine adjust for goal
-  if (goal === 'forza') {
-    estimatedWeight *= 1.1; // heavier for low reps
-  } else if (goal === 'dimagrimento') {
-    estimatedWeight *= 0.85; // lighter for higher reps
-  }
+  if (goal === 'forza') multiplier *= 1.1;
+  else if (goal === 'dimagrimento') multiplier *= 0.9;
 
-  // Round to nearest 2.5 kg or 1 kg
-  if (estimatedWeight > 20) {
-    return Math.round(estimatedWeight / 2.5) * 2.5;
-  }
-  return Math.round(estimatedWeight * 2) / 2;
+  const rawWeight = bodyWeightKg * multiplier;
+  // Round to nearest 2.5 kg
+  const rounded = Math.round(rawWeight / 2.5) * 2.5;
+  return Math.max(2.5, rounded);
 }
 
+/**
+ * Main routine generation strictly adhering to selected frequency (days) and target duration
+ */
 export function generateRoutine(preferences: UserPreferences): Routine {
   const available = getFeasibleExercises(preferences.availableEquipment);
   const preferredIds = preferences.preferredExerciseIds || [];
   const { splitType, goal, lifestyle, bodyWeightKg, experienceLevel } = preferences;
 
-  const days: RoutineDay[] = [];
+  const frequencyDays = Math.max(2, Math.min(6, preferences.frequencyDays || 3));
+  const targetDuration = preferences.workoutDurationMinutes || 60;
+
+  // Exercise count scaling based on target duration (minutes)
+  // 30 min: ~3-4 exercises
+  // 45 min: ~4-5 exercises
+  // 60 min: ~6-7 exercises
+  // 75 min: ~7-8 exercises
+  // 90 min: ~8-9 exercises
+  let targetExercisesPerDay = 6;
+  if (targetDuration <= 35) {
+    targetExercisesPerDay = 3;
+  } else if (targetDuration <= 50) {
+    targetExercisesPerDay = 4;
+  } else if (targetDuration <= 65) {
+    targetExercisesPerDay = 6;
+  } else if (targetDuration <= 80) {
+    targetExercisesPerDay = 7;
+  } else {
+    targetExercisesPerDay = 8;
+  }
 
   const createPlannedEx = (ex: Exercise): PlannedExercise => {
     const params = getRepsAndRestForGoalAndLifestyle(ex, goal, lifestyle);
@@ -144,6 +158,8 @@ export function generateRoutine(preferences: UserPreferences): Routine {
     maxExercises: number,
     dayUsedIds: Set<string>
   ): PlannedExercise[] => {
+    if (maxExercises <= 0) return [];
+
     const candidates = available.filter(
       (ex) => muscles.includes(ex.musclePrimary) && !dayUsedIds.has(ex.id)
     );
@@ -164,185 +180,472 @@ export function generateRoutine(preferences: UserPreferences): Routine {
     return chosen.map(createPlannedEx);
   };
 
-  if (splitType === 'push_pull_legs') {
-    // Day 1: Push
-    const pushUsed = new Set<string>();
-    days.push({
-      id: 'day-push',
-      dayName: 'Giorno A - Spinta (Push)',
-      focus: 'Petto, Spalle Anteriori e Laterali, Tricipiti',
-      exercises: [
-        ...selectForGroup(['Petto'], 3, pushUsed),
-        ...selectForGroup(['Spalle'], 2, pushUsed),
-        ...selectForGroup(['Tricipiti'], 2, pushUsed),
-      ],
+  // Helper to distribute total exercises over specific target muscle buckets
+  const buildDayExercises = (
+    buckets: { muscles: string[]; ratio: number }[],
+    totalCount: number
+  ): PlannedExercise[] => {
+    const dayUsed = new Set<string>();
+    const exercises: PlannedExercise[] = [];
+
+    // Calculate slots per bucket
+    let allocated = 0;
+    const bucketAllocations = buckets.map((b, idx) => {
+      if (idx === buckets.length - 1) {
+        return Math.max(1, totalCount - allocated);
+      }
+      const count = Math.max(1, Math.round(totalCount * b.ratio));
+      allocated += count;
+      return count;
     });
 
-    // Day 2: Pull
-    const pullUsed = new Set<string>();
-    days.push({
-      id: 'day-pull',
-      dayName: 'Giorno B - Tirata (Pull)',
-      focus: 'Dorso, Deltoidi Posteriori, Bicipiti, Addome',
-      exercises: [
-        ...selectForGroup(['Dorso'], 3, pullUsed),
-        ...selectForGroup(['Bicipiti'], 2, pullUsed),
-        ...selectForGroup(['Spalle'], 1, pullUsed),
-        ...selectForGroup(['Addome'], 1, pullUsed),
-      ],
+    buckets.forEach((bucket, idx) => {
+      const limit = bucketAllocations[idx];
+      const selected = selectForGroup(bucket.muscles, limit, dayUsed);
+      exercises.push(...selected);
     });
 
-    // Day 3: Legs
-    const legUsed = new Set<string>();
-    days.push({
-      id: 'day-legs',
-      dayName: 'Giorno C - Gambe (Legs)',
-      focus: 'Quadricipiti, Femorali, Glutei, Core',
-      exercises: [
-        ...selectForGroup(['Quadricipiti'], 2, legUsed),
-        ...selectForGroup(['Femorali'], 2, legUsed),
-        ...selectForGroup(['Glutei'], 1, legUsed),
-        ...selectForGroup(['Polpacci'], 1, legUsed),
-        ...selectForGroup(['Addome'], 1, legUsed),
-      ],
-    });
-  } else if (splitType === 'upper_lower') {
-    const uA = new Set<string>();
-    days.push({
-      id: 'day-upper-a',
-      dayName: 'Giorno 1 - Parte Superiore (A)',
-      focus: 'Petto, Dorso, Spalle, Braccia',
-      exercises: [
-        ...selectForGroup(['Petto'], 2, uA),
-        ...selectForGroup(['Dorso'], 2, uA),
-        ...selectForGroup(['Spalle'], 1, uA),
-        ...selectForGroup(['Bicipiti'], 1, uA),
-        ...selectForGroup(['Tricipiti'], 1, uA),
-      ],
-    });
+    return exercises;
+  };
 
-    const lA = new Set<string>();
-    days.push({
-      id: 'day-lower-a',
-      dayName: 'Giorno 2 - Parte Inferiore (A)',
-      focus: 'Quadricipiti, Femorali, Glutei, Addome',
-      exercises: [
-        ...selectForGroup(['Quadricipiti'], 2, lA),
-        ...selectForGroup(['Femorali'], 2, lA),
-        ...selectForGroup(['Polpacci'], 1, lA),
-        ...selectForGroup(['Addome'], 1, lA),
-      ],
-    });
+  const days: RoutineDay[] = [];
 
-    const uB = new Set<string>();
+  // ==========================================
+  // 2 DAYS SPLIT
+  // ==========================================
+  if (frequencyDays === 2) {
+    // Day 1: Upper Body / Push & Pull
     days.push({
-      id: 'day-upper-b',
-      dayName: 'Giorno 3 - Parte Superiore (B)',
-      focus: 'Dorso, Petto, Deltoidi, Braccia',
-      exercises: [
-        ...selectForGroup(['Dorso'], 2, uB),
-        ...selectForGroup(['Petto'], 2, uB),
-        ...selectForGroup(['Spalle'], 2, uB),
-        ...selectForGroup(['Tricipiti'], 1, uB),
-        ...selectForGroup(['Bicipiti'], 1, uB),
-      ],
-    });
-
-    const lB = new Set<string>();
-    days.push({
-      id: 'day-lower-b',
-      dayName: 'Giorno 4 - Parte Inferiore (B)',
-      focus: 'Femorali, Stacco, Quadricipiti, Addome',
-      exercises: [
-        ...selectForGroup(['Femorali'], 2, lB),
-        ...selectForGroup(['Quadricipiti'], 2, lB),
-        ...selectForGroup(['Polpacci'], 1, lB),
-        ...selectForGroup(['Addome'], 1, lB),
-      ],
-    });
-  } else if (splitType === 'monofrequenza') {
-    const d1 = new Set<string>();
-    days.push({
-      id: 'day-chest-tri',
-      dayName: 'Giorno 1 - Petto e Tricipiti',
-      focus: 'Pettorali completi e Tricipiti',
-      exercises: [
-        ...selectForGroup(['Petto'], 4, d1),
-        ...selectForGroup(['Tricipiti'], 3, d1),
-      ],
-    });
-
-    const d2 = new Set<string>();
-    days.push({
-      id: 'day-back-bi',
-      dayName: 'Giorno 2 - Dorso e Bicipiti',
-      focus: 'Spessore, Ampiezza e Flessori del braccio',
-      exercises: [
-        ...selectForGroup(['Dorso'], 4, d2),
-        ...selectForGroup(['Bicipiti'], 3, d2),
-      ],
-    });
-
-    const d3 = new Set<string>();
-    days.push({
-      id: 'day-shoulders-abs',
-      dayName: 'Giorno 3 - Spalle e Addome',
-      focus: 'Deltoidi 3D e Stabilità Core',
-      exercises: [
-        ...selectForGroup(['Spalle'], 4, d3),
-        ...selectForGroup(['Addome'], 2, d3),
-      ],
-    });
-
-    const d4 = new Set<string>();
-    days.push({
-      id: 'day-legs-mono',
-      dayName: 'Giorno 4 - Gambe Complete',
-      focus: 'Quadricipiti, Femorali, Glutei e Polpacci',
-      exercises: [
-        ...selectForGroup(['Quadricipiti'], 3, d4),
-        ...selectForGroup(['Femorali'], 2, d4),
-        ...selectForGroup(['Polpacci'], 1, d4),
-      ],
-    });
-  } else {
-    // Full Body
-    const count = preferences.frequencyDays || 3;
-    for (let i = 1; i <= Math.min(count, 3); i++) {
-      const fb = new Set<string>();
-      days.push({
-        id: `day-fb-${i}`,
-        dayName: `Giorno ${i} - Full Body`,
-        focus: 'Stimolo su tutti i distretti muscolari',
-        exercises: [
-          ...selectForGroup(['Quadricipiti', 'Femorali'], 2, fb),
-          ...selectForGroup(['Petto'], 1, fb),
-          ...selectForGroup(['Dorso'], 1, fb),
-          ...selectForGroup(['Spalle'], 1, fb),
-          ...selectForGroup(i % 2 === 1 ? ['Bicipiti'] : ['Tricipiti'], 1, fb),
-          ...selectForGroup(['Addome'], 1, fb),
+      id: 'day-1',
+      dayName: 'Giorno 1 - Parte Superiore (Upper Body)',
+      focus: 'Petto, Dorso, Spalle e Braccia',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Petto'], ratio: 0.3 },
+          { muscles: ['Dorso'], ratio: 0.3 },
+          { muscles: ['Spalle'], ratio: 0.2 },
+          { muscles: ['Bicipiti', 'Tricipiti'], ratio: 0.2 },
         ],
+        targetExercisesPerDay
+      ),
+    });
+
+    // Day 2: Lower Body / Legs & Core
+    days.push({
+      id: 'day-2',
+      dayName: 'Giorno 2 - Parte Inferiore (Lower Body & Core)',
+      focus: 'Quadricipiti, Femorali, Glutei, Polpacci e Addome',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Quadricipiti'], ratio: 0.35 },
+          { muscles: ['Femorali', 'Glutei'], ratio: 0.35 },
+          { muscles: ['Polpacci'], ratio: 0.15 },
+          { muscles: ['Addome'], ratio: 0.15 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+  }
+
+  // ==========================================
+  // 3 DAYS SPLIT
+  // ==========================================
+  else if (frequencyDays === 3) {
+    if (splitType === 'full_body') {
+      days.push({
+        id: 'day-1',
+        dayName: 'Giorno 1 - Full Body A (Focus Spinta)',
+        focus: 'Petto, Quadricipiti, Dorso, Braccia',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Petto'], ratio: 0.3 },
+            { muscles: ['Quadricipiti'], ratio: 0.3 },
+            { muscles: ['Dorso'], ratio: 0.25 },
+            { muscles: ['Tricipiti', 'Addome'], ratio: 0.15 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-2',
+        dayName: 'Giorno 2 - Full Body B (Focus Tirata & Catena Posteriore)',
+        focus: 'Dorso, Femorali/Glutei, Spalle, Bicipiti',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Dorso'], ratio: 0.3 },
+            { muscles: ['Femorali', 'Glutei'], ratio: 0.3 },
+            { muscles: ['Spalle'], ratio: 0.25 },
+            { muscles: ['Bicipiti'], ratio: 0.15 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-3',
+        dayName: 'Giorno 3 - Full Body C (Focus Ipertrofia Globale)',
+        focus: 'Gambe complete, Spalle, Petto, Core',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Quadricipiti', 'Femorali'], ratio: 0.35 },
+            { muscles: ['Petto', 'Dorso'], ratio: 0.35 },
+            { muscles: ['Spalle', 'Addome'], ratio: 0.3 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+    } else {
+      // Classic Push / Pull / Legs (default for 3 days)
+      days.push({
+        id: 'day-1',
+        dayName: 'Giorno A - Spinta (Push)',
+        focus: 'Petto, Deltoidi Anteriori/Laterali e Tricipiti',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Petto'], ratio: 0.45 },
+            { muscles: ['Spalle'], ratio: 0.3 },
+            { muscles: ['Tricipiti'], ratio: 0.25 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-2',
+        dayName: 'Giorno B - Tirata (Pull)',
+        focus: 'Dorso, Deltoidi Posteriori, Bicipiti e Addome',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Dorso'], ratio: 0.45 },
+            { muscles: ['Bicipiti'], ratio: 0.25 },
+            { muscles: ['Spalle'], ratio: 0.15 },
+            { muscles: ['Addome'], ratio: 0.15 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-3',
+        dayName: 'Giorno C - Gambe (Legs)',
+        focus: 'Quadricipiti, Femorali, Glutei, Polpacci e Core',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Quadricipiti'], ratio: 0.35 },
+            { muscles: ['Femorali', 'Glutei'], ratio: 0.35 },
+            { muscles: ['Polpacci'], ratio: 0.15 },
+            { muscles: ['Addome'], ratio: 0.15 },
+          ],
+          targetExercisesPerDay
+        ),
       });
     }
   }
 
-  // Fallback
-  days.forEach((day) => {
-    if (day.exercises.length === 0 && available.length > 0) {
-      day.exercises = available.slice(0, 4).map(createPlannedEx);
-    }
-  });
+  // ==========================================
+  // 4 DAYS SPLIT
+  // ==========================================
+  else if (frequencyDays === 4) {
+    // Upper / Lower Split A & B
+    days.push({
+      id: 'day-1',
+      dayName: 'Giorno 1 - Parte Superiore A (Upper A)',
+      focus: 'Petto pesante, Dorso, Spalle e Braccia',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Petto'], ratio: 0.35 },
+          { muscles: ['Dorso'], ratio: 0.3 },
+          { muscles: ['Spalle'], ratio: 0.2 },
+          { muscles: ['Tricipiti'], ratio: 0.15 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
 
-  const titles: Record<SplitType, string> = {
-    push_pull_legs: 'Scheda Push / Pull / Legs',
-    upper_lower: 'Scheda Upper / Lower (4 Giorni)',
-    monofrequenza: 'Scheda Monofrequenza (4 Split)',
-    full_body: `Scheda Full Body (${days.length} Giorni)`,
-  };
+    days.push({
+      id: 'day-2',
+      dayName: 'Giorno 2 - Parte Inferiore A (Lower A)',
+      focus: 'Quadricipiti prioritari, Femorali, Polpacci e Addome',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Quadricipiti'], ratio: 0.4 },
+          { muscles: ['Femorali', 'Glutei'], ratio: 0.3 },
+          { muscles: ['Polpacci'], ratio: 0.15 },
+          { muscles: ['Addome'], ratio: 0.15 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+
+    days.push({
+      id: 'day-3',
+      dayName: 'Giorno 3 - Parte Superiore B (Upper B)',
+      focus: 'Dorso pesante, Petto inclinato, Deltoidi e Bicipiti',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Dorso'], ratio: 0.35 },
+          { muscles: ['Petto'], ratio: 0.3 },
+          { muscles: ['Spalle'], ratio: 0.2 },
+          { muscles: ['Bicipiti'], ratio: 0.15 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+
+    days.push({
+      id: 'day-4',
+      dayName: 'Giorno 4 - Parte Inferiore B (Lower B)',
+      focus: 'Catena Posteriore, Stacchi, Glutei e Core',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Femorali', 'Glutei'], ratio: 0.45 },
+          { muscles: ['Quadricipiti'], ratio: 0.25 },
+          { muscles: ['Polpacci'], ratio: 0.15 },
+          { muscles: ['Addome'], ratio: 0.15 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+  }
+
+  // ==========================================
+  // 5 DAYS SPLIT
+  // ==========================================
+  else if (frequencyDays === 5) {
+    if (splitType === 'monofrequenza') {
+      days.push({
+        id: 'day-1',
+        dayName: 'Giorno 1 - Petto & Addome',
+        focus: 'Panca, Distensioni, Croci e Core',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Petto'], ratio: 0.75 },
+            { muscles: ['Addome'], ratio: 0.25 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-2',
+        dayName: 'Giorno 2 - Dorso & Deltoidi Posteriori',
+        focus: 'Trazioni, Rematori e Pulley',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Dorso'], ratio: 0.75 },
+            { muscles: ['Spalle'], ratio: 0.25 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-3',
+        dayName: 'Giorno 3 - Gambe Complete',
+        focus: 'Squat, Pressa, Femorali e Polpacci',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Quadricipiti'], ratio: 0.4 },
+            { muscles: ['Femorali', 'Glutei'], ratio: 0.4 },
+            { muscles: ['Polpacci'], ratio: 0.2 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-4',
+        dayName: 'Giorno 4 - Spalle & Trapezi',
+        focus: 'Military Press, Alzate Laterali e Posteriori',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Spalle'], ratio: 0.8 },
+            { muscles: ['Addome'], ratio: 0.2 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-5',
+        dayName: 'Giorno 5 - Braccia (Bicipiti & Tricipiti)',
+        focus: 'Super serie Braccia e Isolamento',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Bicipiti'], ratio: 0.5 },
+            { muscles: ['Tricipiti'], ratio: 0.5 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+    } else {
+      // Push / Pull / Legs / Upper / Lower (Best 5-day hybrid)
+      days.push({
+        id: 'day-1',
+        dayName: 'Giorno 1 - Spinta (Push)',
+        focus: 'Petto, Spalle Anteriori e Tricipiti',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Petto'], ratio: 0.45 },
+            { muscles: ['Spalle'], ratio: 0.3 },
+            { muscles: ['Tricipiti'], ratio: 0.25 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-2',
+        dayName: 'Giorno 2 - Tirata (Pull)',
+        focus: 'Dorso, Deltoidi Posteriori e Bicipiti',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Dorso'], ratio: 0.5 },
+            { muscles: ['Bicipiti'], ratio: 0.3 },
+            { muscles: ['Spalle'], ratio: 0.2 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-3',
+        dayName: 'Giorno 3 - Gambe (Legs)',
+        focus: 'Quadricipiti, Femorali, Glutei e Polpacci',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Quadricipiti'], ratio: 0.4 },
+            { muscles: ['Femorali', 'Glutei'], ratio: 0.4 },
+            { muscles: ['Polpacci'], ratio: 0.2 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-4',
+        dayName: 'Giorno 4 - Parte Superiore (Upper Body)',
+        focus: 'Petto, Dorso, Spalle e Braccia',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Petto'], ratio: 0.3 },
+            { muscles: ['Dorso'], ratio: 0.3 },
+            { muscles: ['Spalle'], ratio: 0.2 },
+            { muscles: ['Bicipiti', 'Tricipiti'], ratio: 0.2 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+
+      days.push({
+        id: 'day-5',
+        dayName: 'Giorno 5 - Parte Inferiore & Core (Lower & Abs)',
+        focus: 'Squat, Catena Posteriore e Addominali',
+        exercises: buildDayExercises(
+          [
+            { muscles: ['Quadricipiti'], ratio: 0.35 },
+            { muscles: ['Femorali', 'Glutei'], ratio: 0.35 },
+            { muscles: ['Addome'], ratio: 0.3 },
+          ],
+          targetExercisesPerDay
+        ),
+      });
+    }
+  }
+
+  // ==========================================
+  // 6 DAYS SPLIT (Push / Pull / Legs x 2)
+  // ==========================================
+  else if (frequencyDays === 6) {
+    days.push({
+      id: 'day-1',
+      dayName: 'Giorno 1 - Push A (Forza & Panca)',
+      focus: 'Petto pesante, Spalle e Tricipiti',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Petto'], ratio: 0.45 },
+          { muscles: ['Spalle'], ratio: 0.3 },
+          { muscles: ['Tricipiti'], ratio: 0.25 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+
+    days.push({
+      id: 'day-2',
+      dayName: 'Giorno 2 - Pull A (Spessore & Trazioni)',
+      focus: 'Dorso pesante, Deltoidi Posteriori e Bicipiti',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Dorso'], ratio: 0.5 },
+          { muscles: ['Bicipiti'], ratio: 0.3 },
+          { muscles: ['Spalle'], ratio: 0.2 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+
+    days.push({
+      id: 'day-3',
+      dayName: 'Giorno 3 - Legs A (Quad Focus)',
+      focus: 'Squat pesante, Pressa, Femorali e Polpacci',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Quadricipiti'], ratio: 0.45 },
+          { muscles: ['Femorali', 'Glutei'], ratio: 0.35 },
+          { muscles: ['Polpacci'], ratio: 0.2 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+
+    days.push({
+      id: 'day-4',
+      dayName: 'Giorno 4 - Push B (Ipertrofia & Spalle)',
+      focus: 'Spalle pesanti, Panca inclinata, Cavi e Tricipiti',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Spalle'], ratio: 0.4 },
+          { muscles: ['Petto'], ratio: 0.35 },
+          { muscles: ['Tricipiti'], ratio: 0.25 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+
+    days.push({
+      id: 'day-5',
+      dayName: 'Giorno 5 - Pull B (Ampiezza & Braccia)',
+      focus: 'Lat Machine, Pulley, Isolamento e Bicipiti',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Dorso'], ratio: 0.45 },
+          { muscles: ['Bicipiti'], ratio: 0.35 },
+          { muscles: ['Addome'], ratio: 0.2 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+
+    days.push({
+      id: 'day-6',
+      dayName: 'Giorno 6 - Legs B (Hamstrings & Glute Focus)',
+      focus: 'Stacchi, Affondi, Hip Thrust e Core',
+      exercises: buildDayExercises(
+        [
+          { muscles: ['Femorali', 'Glutei'], ratio: 0.5 },
+          { muscles: ['Quadricipiti'], ratio: 0.3 },
+          { muscles: ['Addome'], ratio: 0.2 },
+        ],
+        targetExercisesPerDay
+      ),
+    });
+  }
 
   return {
     id: 'routine_' + Date.now(),
-    title: titles[splitType],
+    title: `Scheda ${frequencyDays} Giorni - ${splitType.replace('_', ' ').toUpperCase()} (${targetDuration} min)`,
     createdAt: new Date().toISOString(),
     splitType,
     goal,

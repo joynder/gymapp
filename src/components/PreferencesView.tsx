@@ -41,7 +41,10 @@ export const PreferencesView: React.FC<PreferencesViewProps> = ({
   const [preferredExercises, setPreferredExercises] = useState<string[]>(
     preferences.preferredExerciseIds
   );
-  const [frequencyDays, setFrequencyDays] = useState<number>(preferences.frequencyDays);
+  const [frequencyDays, setFrequencyDays] = useState<number>(preferences.frequencyDays || 3);
+  const [workoutDurationMinutes, setWorkoutDurationMinutes] = useState<number>(
+    preferences.workoutDurationMinutes || 60
+  );
   const [splitType, setSplitType] = useState<SplitType>(preferences.splitType);
   const [goal, setGoal] = useState<GoalType>(preferences.goal || 'ipertrofia');
   const [lifestyle, setLifestyle] = useState<LifestyleType>(preferences.lifestyle || 'moderato');
@@ -118,6 +121,7 @@ export const PreferencesView: React.FC<PreferencesViewProps> = ({
       availableEquipment: equipment,
       preferredExerciseIds: preferredExercises,
       frequencyDays,
+      workoutDurationMinutes,
       splitType,
       goal,
       lifestyle,
@@ -300,21 +304,45 @@ export const PreferencesView: React.FC<PreferencesViewProps> = ({
                 <label className="block text-[11px] font-mono uppercase text-zinc-300 font-bold mb-2">
                   Frequenza Settimanale
                 </label>
-                <div className="flex gap-2 mb-4">
-                  {[2, 3, 4, 5].map((d) => (
+                <div className="flex gap-1.5 mb-4">
+                  {[2, 3, 4, 5, 6].map((d) => (
                     <button
                       key={d}
                       type="button"
                       onClick={() => setFrequencyDays(d)}
-                      className={`flex-1 py-2 rounded-xl border text-center font-bold text-xs font-mono ${
+                      className={`flex-1 py-2 rounded-xl border text-center font-bold text-xs font-mono transition-all ${
                         frequencyDays === d
-                          ? 'bg-orange-600 border-orange-500 text-white'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                          ? 'bg-accent border-accent text-white shadow'
+                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-white'
                       }`}
                     >
                       {d} gg
                     </button>
                   ))}
+                </div>
+
+                {/* Slider Durata Allenamento */}
+                <div className="mb-4 p-3 bg-zinc-900 rounded-xl border border-zinc-800 space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-mono font-bold text-accent">
+                    <span>Durata Seduta:</span>
+                    <span className="text-white text-xs">{workoutDurationMinutes} min</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="30"
+                    max="90"
+                    step="15"
+                    value={workoutDurationMinutes}
+                    onChange={(e) => setWorkoutDurationMinutes(parseInt(e.target.value) || 60)}
+                    className="w-full accent-accent cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
+                    <span>30m</span>
+                    <span>45m</span>
+                    <span>60m</span>
+                    <span>75m</span>
+                    <span>90m</span>
+                  </div>
                 </div>
 
                 <label className="block text-[11px] font-mono uppercase text-zinc-300 font-bold mb-2">
@@ -326,10 +354,10 @@ export const PreferencesView: React.FC<PreferencesViewProps> = ({
                       key={lvl}
                       type="button"
                       onClick={() => setExperienceLevel(lvl)}
-                      className={`flex-1 py-2 rounded-xl border text-center font-bold text-xs ${
+                      className={`flex-1 py-2 rounded-xl border text-center font-bold text-xs transition-all ${
                         experienceLevel === lvl
-                          ? 'bg-orange-600 border-orange-500 text-white'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                          ? 'bg-accent border-accent text-white shadow'
+                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-white'
                       }`}
                     >
                       {lvl}

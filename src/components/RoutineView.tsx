@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EXERCISES_DATABASE } from '../data/exercises';
 import type {
   Exercise,
   ExerciseLog,
@@ -8,21 +9,31 @@ import type {
   SetLog,
   UserPreferences,
   WorkoutSession,
+  OngoingWorkoutState,
 } from '../types';
-import { EXERCISES_DATABASE } from '../data/exercises';
-import { getLastPerformance, saveWorkoutSession } from '../utils/storage';
+import {
+  getLastPerformance,
+  saveWorkoutSession,
+  loadOngoingWorkout,
+  saveOngoingWorkout,
+} from '../utils/storage';
 import { AIAssistantWizard } from './AIAssistantWizard';
 import {
-  Play,
-  Eye,
-  Plus,
-  Trash2,
   Dumbbell,
+  Play,
+  RotateCcw,
+  Sparkles,
+  Sliders,
+  CheckCircle2,
+  Trash2,
+  Plus,
+  Eye,
+  Check,
   Clock,
   X,
-  Check,
-  CheckCircle2,
   StopCircle,
+  AlertTriangle,
+  Timer,
 } from 'lucide-react';
 
 interface RoutineViewProps {
@@ -34,6 +45,7 @@ interface RoutineViewProps {
   onRegenerate: () => void;
   onTriggerRestTimer: (seconds: number) => void;
   onGenerateWithAI: (prefs: UserPreferences) => void;
+  onWorkoutStatusChange?: (isRunning: boolean, seconds: number) => void;
 }
 
 export const RoutineView: React.FC<RoutineViewProps> = ({
@@ -45,28 +57,74 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
   onRegenerate,
   onTriggerRestTimer,
   onGenerateWithAI,
+  onWorkoutStatusChange,
 }) => {
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addSearch, setAddSearch] = useState('');
   const [showAIWizard, setShowAIWizard] = useState(false);
 
-  // Active workout execution state (integrated directly inside Scheda)
+  // Active workout execution state (persisted across tab changes & refreshes)
   const [isExecutingWorkout, setIsExecutingWorkout] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [exerciseLogs, setExerciseLogs] = useState<ExerciseLog[]>([]);
-  const [workoutFinishedSummary, setWorkoutFinishedSummary] = useState<WorkoutSession | null>(
-    null
-  );
+  const [workoutFinishedSummary, setWorkoutFinishedSummary] = useState<WorkoutSession | null>(null);
+
+  // Restore ongoing workout on mount if present
+  useEffect(() => {
+    const ongoing = loadOngoingWorkout();
+    if (ongoing && ongoing.exerciseLogs && ongoing.exerciseLogs.length > 0) {
+      setIsExecutingWorkout(true);
+      setSelectedDayIndex(ongoing.dayIndex || 0);
+      setExerciseLogs(ongoing.exerciseLogs);
+
+      // Compute elapsed seconds accurately from startedAt timestamp
+      if (ongoing.startedAt) {
+        const startMs = new Date(ongoing.startedAt).getTime();
+        const diffSecs = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+        setElapsedSeconds(diffSecs);
+      } else {
+        setElapsedSeconds(ongoing.elapsedSeconds || 0);
+      }
+    }
+  }, []);
 
   // Duration timer when workout is active
   useEffect(() => {
-    if (!isExecutingWorkout || workoutFinishedSummary) return;
+    if (!isExecutingWorkout || workoutFinishedSummary) {
+      if (onWorkoutStatusChange) onWorkoutStatusChange(false, 0);
+      return;
+    }
+
+    if (onWorkoutStatusChange) onWorkoutStatusChange(true, elapsedSeconds);
+
     const interval = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      setElapsedSeconds((prev) => {
+        const next = prev + 1;
+        if (onWorkoutStatusChange) onWorkoutStatusChange(true, next);
+        return next;
+      });
     }, 1000);
+
     return () => clearInterval(interval);
   }, [isExecutingWorkout, workoutFinishedSummary]);
+
+  // Persist ongoing workout state when running
+  useEffect(() => {
+    if (isExecutingWorkout && routine && routine.days[selectedDayIndex]) {
+      const activeD = routine.days[selectedDayIndex];
+      const state: OngoingWorkoutState = {
+        routineId: routine.id,
+        dayId: activeD.id,
+        dayIndex: selectedDayIndex,
+        dayName: activeD.dayName,
+        startedAt: new Date(Date.now() - elapsedSeconds * 1000).toISOString(),
+        elapsedSeconds,
+        exerciseLogs,
+      };
+      saveOngoingWorkout(state);
+    }
+  }, [isExecutingWorkout, exerciseLogs, selectedDayIndex, elapsedSeconds, routine]);
 
   // If no routine exists or AI wizard is explicitly open, show the wizard
   if (!routine || routine.days.length === 0 || showAIWizard) {
@@ -103,6 +161,19 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
     onUpdateRoutine({ ...routine, days: updatedDays });
   };
 
+  // Rest seconds regulation directly from the routine view
+  const handleUpdateRestSeconds = (dayIdx: number, exIdx: number, newSeconds: number) => {
+    const updatedDays = [...routine.days];
+    const day = updatedDays[dayIdx];
+    const exercises = [...day.exercises];
+    exercises[exIdx] = {
+      ...exercises[exIdx],
+      restSeconds: Math.max(15, Math.min(300, newSeconds)),
+    };
+    updatedDays[dayIdx] = { ...day, exercises };
+    onUpdateRoutine({ ...routine, days: updatedDays });
+  };
+
   const removeExerciseFromDay = (index: number) => {
     const updatedDays = [...routine.days];
     const currentExercises = [...activeDay.exercises];
@@ -131,12 +202,11 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
     setShowAddModal(false);
   };
 
-  // Launch Workout in-place (loads exactly the weights from Scheda)
+  // Launch Workout in-place (loads exactly the weights and rest times from Scheda)
   const handleStartWorkout = () => {
     const logs: ExerciseLog[] = activeDay.exercises.map((planned) => {
       const details = getExerciseDetails(planned.exerciseId);
       const isBw = planned.isBodyweight || details?.isBodyweight;
-      // Prepopola ESATTAMENTE con il peso impostato nella scheda
       const startingWeight = planned.targetWeightKg !== undefined ? planned.targetWeightKg : 0;
       const targetReps = parseInt(planned.reps.split('-')[0]) || 10;
 
@@ -160,6 +230,32 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
     setElapsedSeconds(0);
     setWorkoutFinishedSummary(null);
     setIsExecutingWorkout(true);
+
+    // Save immediate start state
+    saveOngoingWorkout({
+      routineId: routine.id,
+      dayId: activeDay.id,
+      dayIndex: selectedDayIndex,
+      dayName: activeDay.dayName,
+      startedAt: new Date().toISOString(),
+      elapsedSeconds: 0,
+      exerciseLogs: logs,
+    });
+  };
+
+  // Cancel workout currently in progress
+  const handleCancelWorkout = () => {
+    if (
+      window.confirm(
+        'Sei sicuro di voler annullare l\'allenamento in corso? I progressi di questa sessione non verranno registrati.'
+      )
+    ) {
+      saveOngoingWorkout(null);
+      setIsExecutingWorkout(false);
+      setExerciseLogs([]);
+      setElapsedSeconds(0);
+      if (onWorkoutStatusChange) onWorkoutStatusChange(false, 0);
+    }
   };
 
   // Handle set completion in active workout
@@ -188,7 +284,6 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
       sets[setIdx] = { ...sets[setIdx], weightKg: num };
       updated[exIdx] = { ...updated[exIdx], sets };
 
-      // Calcola la media dei carichi delle serie (es. 10 - 15 - 10 - 10 = 11.25 kg)
       const weights = sets.map((s) => s.weightKg);
       if (weights.length > 0) {
         const avg = Math.round((weights.reduce((sum, w) => sum + w, 0) / weights.length) * 10) / 10;
@@ -262,7 +357,9 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
     };
 
     saveWorkoutSession(session);
+    saveOngoingWorkout(null); // Clear ongoing state on finish
     setWorkoutFinishedSummary(session);
+    if (onWorkoutStatusChange) onWorkoutStatusChange(false, 0);
   };
 
   const formatTimer = (totalSec: number) => {
@@ -275,13 +372,13 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
   if (workoutFinishedSummary) {
     return (
       <div className="max-w-xl mx-auto py-8 text-center space-y-5">
-        <div className="bg-zinc-950 border border-orange-500/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
-          <div className="w-16 h-16 rounded-full bg-orange-950/80 text-orange-400 border border-orange-500/60 flex items-center justify-center mx-auto mb-4">
+        <div className="bg-zinc-950 border border-accent rounded-2xl p-6 sm:p-8 shadow-2xl">
+          <div className="w-16 h-16 rounded-full bg-accent-subtle text-accent border border-accent flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 size={36} />
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white">Sessione Conclusa!</h2>
           <p className="text-zinc-400 text-xs sm:text-sm mt-1">
-            I dati di {workoutFinishedSummary.dayName} sono stati registrati nello storico.
+            I dati di {workoutFinishedSummary.dayName} sono stati registrati con successo nello storico.
           </p>
 
           <div className="grid grid-cols-2 gap-3 my-6">
@@ -295,7 +392,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
               <span className="text-[10px] font-mono text-zinc-500 block uppercase">
                 Volume Sollevato
               </span>
-              <span className="text-xl font-bold text-orange-400 mt-1 block">
+              <span className="text-xl font-bold text-accent mt-1 block">
                 {workoutFinishedSummary.totalVolumeKg.toLocaleString()} kg
               </span>
             </div>
@@ -306,7 +403,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
               setIsExecutingWorkout(false);
               setWorkoutFinishedSummary(null);
             }}
-            className="w-full py-3.5 bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-orange-950"
+            className="w-full py-3.5 bg-accent hover:opacity-90 text-white font-bold text-sm rounded-xl transition-all shadow-lg"
           >
             Torna alla Scheda
           </button>
@@ -340,8 +437,8 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-ping" />
-                <span className="text-[10px] uppercase font-mono text-orange-400 font-bold tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-accent animate-ping" />
+                <span className="text-[10px] uppercase font-mono text-accent font-bold tracking-wider">
                   Allenamento in Corso
                 </span>
               </div>
@@ -350,18 +447,29 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
               </h1>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <div className="bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800 flex items-center gap-1.5 font-mono text-xs text-white">
-                <Clock size={14} className="text-orange-400" />
+                <Clock size={14} className="text-accent" />
                 <span className="font-bold">{formatTimer(elapsedSeconds)}</span>
               </div>
-              <div className="bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800 flex items-center gap-1.5 font-mono text-xs text-orange-400 font-bold">
+              <div className="bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800 flex items-center gap-1.5 font-mono text-xs text-accent font-bold">
                 <Dumbbell size={14} />
                 <span>{totalVolume} kg</span>
               </div>
               <div className="bg-zinc-900 px-2.5 py-1.5 rounded-xl border border-zinc-800 font-mono text-[11px] text-zinc-400">
-                {completedCount}/{totalCount}
+                {completedCount}/{totalCount} set
               </div>
+
+              {/* Quick Cancel Button in HUD */}
+              <button
+                type="button"
+                onClick={handleCancelWorkout}
+                className="px-2.5 py-1.5 rounded-xl border border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-900/40 hover:text-red-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+                title="Annulla allenamento"
+              >
+                <X size={14} />
+                <span className="hidden sm:inline">Annulla</span>
+              </button>
             </div>
           </div>
         </div>
@@ -383,20 +491,29 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                 {/* Header */}
                 <div className="p-3.5 bg-zinc-900/90 border-b border-zinc-800 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-5 h-5 rounded bg-zinc-800 text-orange-400 font-mono text-xs flex items-center justify-center font-bold flex-shrink-0">
+                    <span className="w-5 h-5 rounded bg-zinc-800 text-accent font-mono text-xs flex items-center justify-center font-bold flex-shrink-0">
                       {exIdx + 1}
                     </span>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <h3 className="text-sm font-bold text-white truncate">{details.name}</h3>
                         {isBw && (
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-orange-400 border border-zinc-700">
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-accent border border-zinc-700">
                             Corpo Libero
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] font-mono text-zinc-400 mt-0.5">
-                        Target: {planned.reps} reps • Rec: {planned.restSeconds}s
+                      <div className="text-[10px] font-mono text-zinc-400 mt-0.5 flex items-center gap-1.5">
+                        <span>Target: {planned.reps} reps</span>
+                        <span>•</span>
+                        <button
+                          onClick={() => onTriggerRestTimer(planned.restSeconds)}
+                          className="text-accent hover:underline flex items-center gap-0.5"
+                          title="Avvia timer recupero"
+                        >
+                          <Timer size={11} />
+                          <span>Rec: {planned.restSeconds}s</span>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -404,7 +521,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenExerciseModal(details)}
-                    className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-orange-400 rounded-lg text-xs font-mono flex items-center gap-1"
+                    className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-accent rounded-lg text-xs font-mono flex items-center gap-1 transition-colors"
                   >
                     <Eye size={13} />
                     <span className="text-[10px]">Video</span>
@@ -427,7 +544,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                       {log?.sets.map((set, setIdx) => (
                         <tr
                           key={set.setNumber}
-                          className={set.completed ? 'bg-orange-950/20' : ''}
+                          className={set.completed ? 'bg-accent-subtle/40' : ''}
                         >
                           <td className="py-2 px-1 text-center font-bold text-zinc-400">
                             {set.setNumber}
@@ -448,7 +565,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                                     handleUpdateWeightInWorkout(exIdx, setIdx, e.target.value)
                                   }
                                   placeholder="0 (Libero)"
-                                  className="w-24 px-2 py-1.5 bg-black border border-zinc-800 focus:border-orange-500 rounded text-center text-xs font-bold text-white placeholder-zinc-600"
+                                  className="w-20 px-2 py-1.5 bg-black border border-zinc-800 focus:border-accent rounded text-center text-xs font-bold text-white outline-none"
                                 />
                               </div>
                             ) : (
@@ -460,20 +577,21 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                                   handleUpdateWeightInWorkout(exIdx, setIdx, e.target.value)
                                 }
                                 placeholder="0"
-                                className="w-16 px-2 py-1.5 bg-black border border-zinc-800 focus:border-orange-500 rounded text-center text-xs font-bold text-white"
+                                className="w-20 px-2 py-1.5 bg-black border border-zinc-800 focus:border-accent rounded text-center text-xs font-bold text-white outline-none"
                               />
                             )}
                           </td>
                           <td className="py-2 px-1">
                             <input
                               type="number"
+                              min="0"
                               step="1"
                               value={set.reps === 0 ? '' : set.reps}
                               onChange={(e) =>
                                 handleUpdateRepsInWorkout(exIdx, setIdx, e.target.value)
                               }
                               placeholder="0"
-                              className="w-16 px-2 py-1.5 bg-black border border-zinc-800 focus:border-orange-500 rounded text-center text-xs font-bold text-white"
+                              className="w-16 px-2 py-1.5 bg-black border border-zinc-800 focus:border-accent rounded text-center text-xs font-bold text-white outline-none"
                             />
                           </td>
                           <td className="py-2 px-1 text-center">
@@ -482,7 +600,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                               onClick={() => handleToggleSet(exIdx, setIdx)}
                               className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all ${
                                 set.completed
-                                  ? 'bg-orange-600 text-white shadow-md shadow-orange-950'
+                                  ? 'bg-accent text-white shadow-md'
                                   : 'bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white'
                               }`}
                             >
@@ -499,15 +617,24 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
           })}
         </div>
 
-        {/* Complete Workout Button */}
-        <div className="pt-2">
+        {/* Action Buttons: Finish & Cancel */}
+        <div className="pt-3 space-y-2.5">
           <button
             type="button"
             onClick={handleFinishAndSaveWorkout}
-            className="w-full py-4 bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-xl shadow-orange-950 flex items-center justify-center gap-2"
+            className="w-full py-4 bg-accent hover:opacity-90 active:opacity-100 text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-xl flex items-center justify-center gap-2 transition-all"
           >
             <StopCircle size={18} />
             Termina e Salva Allenamento nello Storico
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCancelWorkout}
+            className="w-full py-3 bg-zinc-900 hover:bg-red-950/60 border border-zinc-800 hover:border-red-800 text-zinc-400 hover:text-red-300 font-semibold text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 transition-colors"
+          >
+            <AlertTriangle size={15} />
+            Annulla Questo Allenamento (Non Salvare)
           </button>
         </div>
       </div>
@@ -525,61 +652,56 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
             onClick={() => setSelectedDayIndex(idx)}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap flex-shrink-0 ${
               selectedDayIndex === idx
-                ? 'bg-orange-600 text-white shadow'
+                ? 'bg-accent text-white shadow'
                 : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
             }`}
           >
-            {day.dayName}
+            {day.dayName.split(' - ')[0] || `Giorno ${idx + 1}`}
           </button>
         ))}
       </div>
 
-      {/* Day Overview Banner & Direct Launch */}
-      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Routine Header */}
+      <div className="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
         <div>
-          <h1 className="text-lg sm:text-xl font-bold text-white">{activeDay.dayName}</h1>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            {activeDay.focus} · {activeDay.exercises.length} esercizi
-          </p>
+          <span className="text-[10px] font-mono text-accent uppercase tracking-wider font-semibold">
+            {routine.splitType.replace('_', ' ')} · {routine.days.length} Giorni · {preferences.workoutDurationMinutes || 60} min
+          </span>
+          <h1 className="text-lg sm:text-xl font-extrabold text-white mt-0.5">
+            {activeDay.dayName}
+          </h1>
+          <p className="text-xs text-zinc-400 mt-0.5">{activeDay.focus}</p>
         </div>
 
-        <button
-          onClick={handleStartWorkout}
-          className="w-full sm:w-auto px-6 py-3 bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-bold text-sm rounded-xl transition-all shadow-md text-center"
-        >
-          Avvia Allenamento
-        </button>
-      </div>
-
-      {/* Quick Action Info Line */}
-      <div className="flex items-center justify-between px-1 text-xs text-zinc-400">
-        <span>Tocca un esercizio per vedere la guida</span>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onRegenerate}
-            className="hover:text-white transition-colors"
-          >
-            Rigenera
-          </button>
-          <span className="text-zinc-700">·</span>
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           <button
             onClick={() => setShowAIWizard(true)}
-            className="hover:text-white transition-colors"
+            className="flex-1 sm:flex-initial px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors"
           >
-            Nuova Scheda
+            <Sparkles size={14} className="text-accent" />
+            <span>Nuova Scheda</span>
           </button>
-          <span className="text-zinc-700">·</span>
+
+          <button
+            onClick={onRegenerate}
+            title="Rigenera con parametri attuali"
+            className="p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-zinc-400 hover:text-white transition-colors"
+          >
+            <RotateCcw size={15} />
+          </button>
+
           <button
             onClick={onOpenPreferences}
-            className="hover:text-white transition-colors"
+            title="Parametri e Attrezzatura"
+            className="p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-zinc-400 hover:text-white transition-colors"
           >
-            Attrezzi
+            <Sliders size={15} />
           </button>
         </div>
       </div>
 
-      {/* Exercises List for Active Day */}
-      <div className="space-y-2.5">
+      {/* Exercises list for the selected day */}
+      <div className="space-y-3">
         {activeDay.exercises.map((plannedEx, idx) => {
           const details = getExerciseDetails(plannedEx.exerciseId);
           if (!details) return null;
@@ -589,14 +711,14 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
           return (
             <div
               key={`${plannedEx.exerciseId}-${idx}`}
-              className="bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700 rounded-2xl p-4 transition-all flex items-center justify-between gap-3"
+              className="bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700 rounded-2xl p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
             >
               {/* Exercise information - Tapping opens details */}
               <div
                 onClick={() => onOpenExerciseModal(details)}
                 className="flex-1 min-w-0 cursor-pointer"
               >
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-orange-500 uppercase tracking-wider">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent uppercase tracking-wider">
                   <span>{details.musclePrimary}</span>
                   {isBw && (
                     <>
@@ -613,23 +735,60 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                 <div className="text-xs text-zinc-400 mt-1 flex items-center gap-2 flex-wrap">
                   <span>{plannedEx.sets} serie × {plannedEx.reps} reps</span>
                   <span className="text-zinc-700">·</span>
-                  <span>Recupero {plannedEx.restSeconds}s</span>
                   {lastLog && (
                     <>
-                      <span className="text-zinc-700">·</span>
                       <span className="text-zinc-500">
                         Ultimo: {isBw ? (lastLog.weightKg > 0 ? `+${lastLog.weightKg}kg` : 'C.L.') : `${lastLog.weightKg} kg`}
                       </span>
+                      <span className="text-zinc-700">·</span>
                     </>
                   )}
                 </div>
               </div>
 
-              {/* Base weight input + remove */}
-              <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Recovery and Base weight controls */}
+              <div className="flex items-center gap-3 justify-between sm:justify-end flex-wrap flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-800/60">
+                {/* Configurable Rest Seconds */}
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] text-zinc-400 block font-mono flex items-center gap-1">
+                    <Timer size={11} className="text-accent" />
+                    <span>Recupero</span>
+                  </span>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateRestSeconds(selectedDayIndex, idx, plannedEx.restSeconds - 15)}
+                      className="w-5 h-6 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded text-zinc-400 hover:text-white text-xs flex items-center justify-center font-bold"
+                      title="-15s"
+                    >
+                      -
+                    </button>
+                    <select
+                      value={plannedEx.restSeconds}
+                      onChange={(e) => handleUpdateRestSeconds(selectedDayIndex, idx, parseInt(e.target.value) || 90)}
+                      className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-1 text-xs font-mono font-bold text-white focus:outline-none focus:border-accent cursor-pointer"
+                    >
+                      {[30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240].map((sec) => (
+                        <option key={sec} value={sec}>
+                          {sec}s
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateRestSeconds(selectedDayIndex, idx, plannedEx.restSeconds + 15)}
+                      className="w-5 h-6 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded text-zinc-400 hover:text-white text-xs flex items-center justify-center font-bold"
+                      title="+15s"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Base weight input */}
                 {isBw ? (
                   <div className="text-right">
-                    <span className="text-[10px] text-zinc-500 block">Zavorra</span>
+                    <span className="text-[10px] text-zinc-400 block font-mono">Zavorra</span>
                     <input
                       type="number"
                       step="0.5"
@@ -643,13 +802,13 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                         )
                       }
                       placeholder="+0"
-                      className="w-14 px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-center text-xs font-bold text-white focus:outline-none focus:border-orange-500"
+                      className="w-16 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-center text-xs font-bold text-white focus:outline-none focus:border-accent"
                     />
                   </div>
                 ) : (
                   <div className="text-right">
-                    <span className="text-[10px] text-zinc-500 block">Carico base</span>
-                    <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-zinc-400 block font-mono">Carico base</span>
+                    <div className="flex items-center gap-1 mt-0.5">
                       <input
                         type="number"
                         step="0.5"
@@ -662,16 +821,18 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                             parseFloat(e.target.value) || 0
                           )
                         }
-                        className="w-14 px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-center text-xs font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                        className="w-16 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-center text-xs font-bold text-white focus:outline-none focus:border-accent"
                       />
-                      <span className="text-xs text-zinc-500">kg</span>
+                      <span className="text-xs text-zinc-500 font-mono">kg</span>
                     </div>
                   </div>
                 )}
 
+                {/* Remove exercise */}
                 <button
+                  type="button"
                   onClick={() => removeExerciseFromDay(idx)}
-                  className="p-2 text-zinc-600 hover:text-red-400 transition-colors ml-1"
+                  className="p-1.5 text-zinc-600 hover:text-red-400 transition-colors"
                   title="Rimuovi esercizio"
                 >
                   <Trash2 size={16} />
@@ -682,23 +843,21 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
         })}
       </div>
 
-      {/* Add exercise button */}
-      <div>
+      {/* Add exercise and start workout buttons */}
+      <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
         <button
           onClick={() => setShowAddModal(true)}
-          className="w-full py-3 border border-dashed border-zinc-800 hover:border-zinc-600 hover:bg-zinc-900/50 rounded-2xl text-xs sm:text-sm font-semibold text-zinc-400 hover:text-white transition-all text-center"
+          className="flex-1 py-3 px-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 border-dashed rounded-xl text-xs font-semibold text-zinc-300 hover:text-white flex items-center justify-center gap-2 transition-all"
         >
-          + Aggiungi Esercizio
+          <Plus size={16} />
+          Aggiungi un altro esercizio a questo giorno
         </button>
-      </div>
 
-      {/* Bottom Floating/Fixed Start Workout Bar */}
-      <div className="pt-2">
         <button
           onClick={handleStartWorkout}
-          className="w-full py-4 bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-sm sm:text-base rounded-2xl shadow-xl shadow-orange-950 flex items-center justify-center gap-2 transition-all"
+          className="py-3 px-6 bg-accent hover:opacity-90 active:opacity-100 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-all"
         >
-          <Play size={18} /> Inizia Allenamento di Oggi
+          <Play size={16} /> Inizia Allenamento di Oggi
         </button>
       </div>
 
@@ -721,7 +880,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                 placeholder="Cerca per nome o muscolo..."
                 value={addSearch}
                 onChange={(e) => setAddSearch(e.target.value)}
-                className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500"
+                className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-accent"
               />
             </div>
             <div className="p-3 overflow-y-auto space-y-2 flex-1">
@@ -742,7 +901,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                   </div>
                   <button
                     onClick={() => addExerciseToDay(ex)}
-                    className="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                    className="px-3 py-1.5 bg-accent hover:opacity-90 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
                   >
                     <Plus size={13} /> Aggiungi
                   </button>

@@ -4,30 +4,39 @@
   --accent: #f97316;
   --accent-hover: #ea580c;
   --accent-light: rgba(249, 115, 22, 0.15);
-  --accent-border: rgba(249, 115, 22, 0.4);
+  --accent-subtle: rgba(249, 115, 22, 0.08);
+  --accent-border: rgba(249, 115, 22, 0.45);
+  --accent-rgb: 249, 115, 22;
 }
 
 [data-theme="green"] {
   --accent: #22c55e;
   --accent-hover: #16a34a;
   --accent-light: rgba(34, 197, 94, 0.15);
-  --accent-border: rgba(34, 197, 94, 0.4);
+  --accent-subtle: rgba(34, 197, 94, 0.08);
+  --accent-border: rgba(34, 197, 94, 0.45);
+  --accent-rgb: 34, 197, 94;
 }
 
 [data-theme="pink"] {
   --accent: #ec4899;
   --accent-hover: #db2777;
   --accent-light: rgba(236, 72, 153, 0.15);
-  --accent-border: rgba(236, 72, 153, 0.4);
+  --accent-subtle: rgba(236, 72, 153, 0.08);
+  --accent-border: rgba(236, 72, 153, 0.45);
+  --accent-rgb: 236, 72, 153;
 }
 
 [data-theme="blue"] {
   --accent: #0ea5e9;
   --accent-hover: #0284c7;
   --accent-light: rgba(14, 165, 233, 0.15);
-  --accent-border: rgba(14, 165, 233, 0.4);
+  --accent-subtle: rgba(14, 165, 233, 0.08);
+  --accent-border: rgba(14, 165, 233, 0.45);
+  --accent-rgb: 14, 165, 233;
 }
 
+/* Explicit Utility Classes */
 .bg-accent {
   background-color: var(--accent) !important;
 }
@@ -40,31 +49,60 @@
 .border-accent {
   border-color: var(--accent) !important;
 }
-.border-accent-subtle {
+.border-accent-border, .border-accent-subtle {
   border-color: var(--accent-border) !important;
 }
-.bg-accent-subtle {
+.bg-accent-subtle, .bg-accent-light {
   background-color: var(--accent-light) !important;
 }
 .accent-accent {
   accent-color: var(--accent) !important;
 }
 
-/* Override orange utility classes to respond to current theme */
-.bg-orange-600, .bg-orange-500 {
-  background-color: var(--accent) !important;
-}
-.hover\:bg-orange-500:hover, .hover\:bg-orange-600:hover {
-  background-color: var(--accent-hover) !important;
-}
-.text-orange-500, .text-orange-400, .text-orange-300 {
+/* Universal overrides for orange classes to seamlessly follow active theme */
+[class*="text-orange-"] {
   color: var(--accent) !important;
 }
-.border-orange-500, .border-orange-600 {
+[class*="hover:text-orange-"]:hover {
+  color: var(--accent-hover) !important;
+}
+
+[class*="bg-orange-500"], [class*="bg-orange-600"] {
+  background-color: var(--accent) !important;
+}
+[class*="hover:bg-orange-500"]:hover, [class*="hover:bg-orange-600"]:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+[class*="bg-orange-500/"], [class*="bg-orange-600/"], [class*="bg-orange-950/"], [class*="bg-orange-400/"] {
+  background-color: var(--accent-light) !important;
+}
+
+[class*="border-orange-"] {
+  border-color: var(--accent-border) !important;
+}
+[class*="hover:border-orange-"]:hover {
   border-color: var(--accent) !important;
 }
-.accent-orange-500 {
+
+[class*="accent-orange-"] {
   accent-color: var(--accent) !important;
+}
+
+[class*="ring-orange-"] {
+  --tw-ring-color: var(--accent) !important;
+}
+
+[class*="selection:bg-orange-"]::selection {
+  background-color: var(--accent) !important;
+  color: #ffffff !important;
+}
+
+[class*="fill-orange-"] {
+  fill: var(--accent) !important;
+}
+[class*="stroke-orange-"] {
+  stroke: var(--accent) !important;
 }
 
 :root {
@@ -97,7 +135,4 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #27272a;
   border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #f97316;
 }

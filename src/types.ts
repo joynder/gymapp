@@ -35,7 +35,15 @@ export type EquipmentId =
   | 'hack_squat_machine'
   | 't_bar_machine'
   | 'ab_wheel'
-  | 'hip_thrust_bench';
+  | 'hip_thrust_bench'
+  | 'chest_press_machine'
+  | 'incline_chest_press_machine'
+  | 'abductor_machine'
+  | 'adductor_machine'
+  | 'reverse_pec_deck'
+  | 'hyperextension_bench'
+  | 'assisted_pullup_dip'
+  | 'seated_calf_machine';
 
 export interface Equipment {
   id: EquipmentId;
@@ -134,6 +142,7 @@ export interface UserPreferences {
   bodyWeightKg: number;
   goal: GoalType;
   lifestyle: LifestyleType;
+  workoutDurationMinutes?: number; // Durata desiderata sessione (30, 45, 60, 75, 90 min)
   themeColor?: ThemeColor;
 }
 
@@ -203,6 +212,16 @@ export interface UserAccount {
 }
 
 export interface AppDatabase {
-  activeUserId: string;
+  activeUserId: string | null;
   users: Record<string, UserAccount>;
+}
+
+export interface OngoingWorkoutState {
+  routineId?: string;
+  dayId: string;
+  dayIndex: number;
+  dayName: string;
+  startedAt: string;
+  elapsedSeconds: number;
+  exerciseLogs: ExerciseLog[];
 }

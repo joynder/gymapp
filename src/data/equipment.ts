@@ -151,4 +151,52 @@ export const EQUIPMENT_LIST: Equipment[] = [
     category: 'Base',
     description: 'Bande elastiche per riscaldamento, trazioni assistite e resistenza.',
   },
+  {
+    id: 'chest_press_machine',
+    name: 'Chest Press Machine',
+    category: 'Macchinari',
+    description: 'Macchina guidata a piastre o carrucola per distensioni orizzontali del petto in sicurezza.',
+  },
+  {
+    id: 'incline_chest_press_machine',
+    name: 'Incline Chest Press Machine',
+    category: 'Macchinari',
+    description: 'Macchina a traiettoria inclinata guidata convergente per il fascio clavicolare del pettorale.',
+  },
+  {
+    id: 'abductor_machine',
+    name: 'Hip Abductor Machine',
+    category: 'Macchinari',
+    description: 'Macchina a sedile con cuscinetti esterni per abduzione dell\'anca e isolamento del medio gluteo.',
+  },
+  {
+    id: 'adductor_machine',
+    name: 'Hip Adductor Machine',
+    category: 'Macchinari',
+    description: 'Macchina a sedile con cuscinetti interni per adduzione e rinforzo dei muscoli adduttori dell\'interno coscia.',
+  },
+  {
+    id: 'reverse_pec_deck',
+    name: 'Rear Delt Fly / Reverse Pec Deck',
+    category: 'Macchinari',
+    description: 'Macchinario specifico per isolamento guidato dei deltoidi posteriori e retrattori della scapola.',
+  },
+  {
+    id: 'hyperextension_bench',
+    name: 'Panca Iperestensioni / Roman Chair',
+    category: 'Strutture',
+    description: 'Panca a 45° o orizzontale con blocco caviglie per estensioni lombari, glutei e femorali.',
+  },
+  {
+    id: 'assisted_pullup_dip',
+    name: 'Macchina Trazioni e Dip Assistiti',
+    category: 'Macchinari',
+    description: 'Stazione guidata con pedana a contrappeso per eseguire trazioni e dip a intensità scalata.',
+  },
+  {
+    id: 'seated_calf_machine',
+    name: 'Calf Machine Seduto (Seated Calf)',
+    category: 'Macchinari',
+    description: 'Macchina da seduto con cuscinetti sulle ginocchia per isolamento del soleo a ginocchio flesso.',
+  },
 ];

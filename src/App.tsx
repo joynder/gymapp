@@ -3,8 +3,15 @@ import type {
   Exercise,
   Routine,
   UserPreferences,
+  UserAccount,
 } from './types';
 import {
+  getActiveUser,
+  listUserAccounts,
+  loginUser,
+  logoutUser,
+  createUserAccount,
+  deleteUserAccount,
   loadActiveRoutine,
   loadUserPreferences,
   saveActiveRoutine,
@@ -19,17 +26,51 @@ import { LibraryView } from './components/LibraryView';
 import { HistoryView } from './components/HistoryView';
 import { ExerciseModal } from './components/ExerciseModal';
 import { RestTimer } from './components/RestTimer';
+import { AccountSelectionView } from './components/AccountSelectionView';
 
 export default function App() {
+  const [activeUser, setActiveUser] = useState<UserAccount | null>(() => getActiveUser());
+  const [accounts, setAccounts] = useState<UserAccount[]>(() => listUserAccounts());
   const [currentTab, setCurrentTab] = useState<TabType>('routine');
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
-  const [routine, setRoutine] = useState<Routine | null>(() => {
-    return loadActiveRoutine();
-  });
+  const [routine, setRoutine] = useState<Routine | null>(() => loadActiveRoutine());
 
   const [inspectedExercise, setInspectedExercise] = useState<Exercise | null>(null);
   const [isTimerOpen, setIsTimerOpen] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(90);
+
+  // Ongoing workout tracking for global header banner
+  const [isWorkoutRunning, setIsWorkoutRunning] = useState(false);
+  const [workoutSeconds, setWorkoutSeconds] = useState(0);
+
+  const refreshUserData = () => {
+    const current = getActiveUser();
+    setActiveUser(current);
+    setAccounts(listUserAccounts());
+    setPreferences(loadUserPreferences());
+    setRoutine(loadActiveRoutine());
+  };
+
+  const handleSelectAccount = (accountId: string) => {
+    loginUser(accountId);
+    refreshUserData();
+  };
+
+  const handleCreateAccount = (name: string, weightKg: number) => {
+    createUserAccount(name, weightKg);
+    refreshUserData();
+  };
+
+  const handleDeleteAccount = (accountId: string) => {
+    deleteUserAccount(accountId);
+    refreshUserData();
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    setActiveUser(null);
+    setAccounts(listUserAccounts());
+  };
 
   const handleUpdateRoutine = (updated: Routine) => {
     setRoutine(updated);
@@ -75,12 +116,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // If no account is logged in, show the simple account selection screen
+  if (!activeUser) {
+    return (
+      <AccountSelectionView
+        accounts={accounts}
+        onSelectAccount={handleSelectAccount}
+        onCreateAccount={handleCreateAccount}
+        onDeleteAccount={handleDeleteAccount}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex flex-col font-sans selection:bg-orange-600 selection:text-white pb-20 md:pb-0">
+    <div className="min-h-screen bg-black text-zinc-100 flex flex-col font-sans selection:bg-accent selection:text-white pb-20 md:pb-0">
       {/* Top Navbar */}
       <Navbar
         currentTab={currentTab}
         onTabChange={setCurrentTab}
+        userName={activeUser.name}
+        onLogout={handleLogout}
+        isWorkoutRunning={isWorkoutRunning}
+        workoutSeconds={workoutSeconds}
       />
 
       {/* Main Container */}
@@ -95,6 +152,10 @@ export default function App() {
             onRegenerate={handleRegenerateCurrent}
             onTriggerRestTimer={handleTriggerRestTimer}
             onGenerateWithAI={handleGenerateRoutine}
+            onWorkoutStatusChange={(running, seconds) => {
+              setIsWorkoutRunning(running);
+              setWorkoutSeconds(seconds);
+            }}
           />
         )}
 
@@ -126,7 +187,7 @@ export default function App() {
         onClose={() => setInspectedExercise(null)}
       />
 
-      {/* Rest Timer */}
+      {/* Draggable Rest Timer */}
       <RestTimer
         initialSeconds={timerSeconds}
         isOpen={isTimerOpen}
