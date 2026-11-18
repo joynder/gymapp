@@ -4,6 +4,7 @@ import type {
   Routine,
   UserPreferences,
   UserAccount,
+  ThemeColor,
 } from './types';
 import {
   getActiveUser,
@@ -14,6 +15,7 @@ import {
   deleteUserAccount,
   loadActiveRoutine,
   loadUserPreferences,
+  loadWorkoutSessions,
   saveActiveRoutine,
   saveUserPreferences,
 } from './utils/storage';
@@ -82,16 +84,26 @@ export default function App() {
     saveUserPreferences(updated);
   };
 
+  const handleThemeChange = (theme: ThemeColor) => {
+    const updated = { ...preferences, themeColor: theme };
+    setPreferences(updated);
+    saveUserPreferences(updated);
+    document.documentElement.setAttribute('data-theme', theme);
+  };
+
+  // Generate routine calibrating upon user's historical performance & progressive overload
   const handleGenerateRoutine = (updatedPrefs: UserPreferences) => {
     handleSavePreferences(updatedPrefs);
-    const newRoutine = generateRoutine(updatedPrefs);
+    const sessions = loadWorkoutSessions();
+    const newRoutine = generateRoutine(updatedPrefs, sessions);
     setRoutine(newRoutine);
     saveActiveRoutine(newRoutine);
     setCurrentTab('routine');
   };
 
   const handleRegenerateCurrent = () => {
-    const newRoutine = generateRoutine(preferences);
+    const sessions = loadWorkoutSessions();
+    const newRoutine = generateRoutine(preferences, sessions);
     setRoutine(newRoutine);
     saveActiveRoutine(newRoutine);
   };
@@ -130,7 +142,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 flex flex-col font-sans selection:bg-accent selection:text-white pb-20 md:pb-0">
-      {/* Top Navbar */}
+      {/* Top Navbar with Profile Dropdown & Theme Selector */}
       <Navbar
         currentTab={currentTab}
         onTabChange={setCurrentTab}
@@ -138,6 +150,8 @@ export default function App() {
         onLogout={handleLogout}
         isWorkoutRunning={isWorkoutRunning}
         workoutSeconds={workoutSeconds}
+        currentTheme={preferences.themeColor || 'orange'}
+        onThemeChange={handleThemeChange}
       />
 
       {/* Main Container */}
@@ -164,7 +178,6 @@ export default function App() {
             preferences={preferences}
             onSavePreferences={handleSavePreferences}
             onGenerateRoutine={handleGenerateRoutine}
-            onOpenExerciseModal={setInspectedExercise}
           />
         )}
 

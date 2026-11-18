@@ -60,13 +60,13 @@ export const EXERCISES_DATABASE: Exercise[] = [
   },
   {
     id: 'incline_dumbbell_press',
-    name: 'Spinte con Manubri su Panca Inclinata',
+    name: 'Panca Inclinata con Manubri',
     musclePrimary: 'Petto',
     musclesSecondary: ['Spalle', 'Tricipiti'],
     requiredEquipment: ['dumbbells', 'bench'],
     category: 'Composto',
     difficulty: 'Intermedio',
-    description: 'Consente una convergenza fisiologica e grande escursione per la parte alta del petto.',
+    description: 'Distensioni su panca inclinata con manubri. Consente una convergenza fisiologica e grande escursione per la parte alta del petto.',
     executionSteps: [
       'Panca regolata a 30-45°. Solleva i manubri alle spalle con le cosce.',
       'Spingi verso l\'alto compiendo una leggera traiettoria convergente.',
@@ -86,13 +86,13 @@ export const EXERCISES_DATABASE: Exercise[] = [
   },
   {
     id: 'flat_dumbbell_press',
-    name: 'Spinte con Manubri su Panca Piana',
+    name: 'Panca Piana con Manubri',
     musclePrimary: 'Petto',
     musclesSecondary: ['Spalle', 'Tricipiti'],
     requiredEquipment: ['dumbbells', 'bench'],
     category: 'Composto',
     difficulty: 'Base',
-    description: 'Ottima alternativa alla panca bilanciere con maggiore mobilità per polsi e spalle.',
+    description: 'Distensioni su panca piana con manubri. Ottima alternativa alla panca bilanciere con maggiore libertà di movimento per polsi e spalle.',
     executionSteps: [
       'Sdraiati con un manubrio per mano all\'altezza dei pettorali.',
       'Spingi verso l\'alto mantenendo i gomiti a circa 45° dal torso.',

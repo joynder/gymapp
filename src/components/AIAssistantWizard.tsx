@@ -29,7 +29,10 @@ export const AIAssistantWizard: React.FC<AIAssistantWizardProps> = ({
   onCancel,
 }) => {
   const [step, setStep] = useState<number>(1);
-  const [bodyWeightKg, setBodyWeightKg] = useState<number>(currentPreferences.bodyWeightKg || 75);
+  const [bodyWeightKg, setBodyWeightKg] = useState<number>(() => {
+    const raw = currentPreferences.bodyWeightKg || 75;
+    return Math.round(raw / 5) * 5;
+  });
   const [lifestyle, setLifestyle] = useState<LifestyleType>(currentPreferences.lifestyle || 'moderato');
   const [goal, setGoal] = useState<GoalType>(currentPreferences.goal || 'ipertrofia');
   const [frequencyDays, setFrequencyDays] = useState<number>(currentPreferences.frequencyDays || 3);
@@ -126,17 +129,17 @@ export const AIAssistantWizard: React.FC<AIAssistantWizardProps> = ({
             <input
               type="range"
               min="40"
-              max="150"
-              step="0.5"
+              max="160"
+              step="5"
               value={bodyWeightKg}
-              onChange={(e) => setBodyWeightKg(parseFloat(e.target.value) || 75)}
+              onChange={(e) => setBodyWeightKg(parseInt(e.target.value, 10) || 75)}
               className="w-full accent-accent cursor-pointer"
             />
-            <div className="flex justify-between text-xs text-zinc-500">
+            <div className="flex justify-between text-xs text-zinc-500 font-mono">
               <span>40 kg</span>
               <span>80 kg</span>
               <span>120 kg</span>
-              <span>150 kg</span>
+              <span>160 kg</span>
             </div>
           </div>
 

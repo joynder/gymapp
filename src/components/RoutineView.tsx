@@ -111,7 +111,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
 
   // Persist ongoing workout state when running
   useEffect(() => {
-    if (isExecutingWorkout && routine && routine.days[selectedDayIndex]) {
+    if (isExecutingWorkout && !workoutFinishedSummary && routine && routine.days[selectedDayIndex]) {
       const activeD = routine.days[selectedDayIndex];
       const state: OngoingWorkoutState = {
         routineId: routine.id,
@@ -124,7 +124,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
       };
       saveOngoingWorkout(state);
     }
-  }, [isExecutingWorkout, exerciseLogs, selectedDayIndex, elapsedSeconds, routine]);
+  }, [isExecutingWorkout, workoutFinishedSummary, exerciseLogs, selectedDayIndex, elapsedSeconds, routine]);
 
   // If no routine exists or AI wizard is explicitly open, show the wizard
   if (!routine || routine.days.length === 0 || showAIWizard) {
@@ -357,7 +357,10 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
     };
 
     saveWorkoutSession(session);
-    saveOngoingWorkout(null); // Clear ongoing state on finish
+    saveOngoingWorkout(null); // Clear ongoing state immediately
+    setIsExecutingWorkout(false); // Stop execution state immediately
+    setExerciseLogs([]);
+    setElapsedSeconds(0);
     setWorkoutFinishedSummary(session);
     if (onWorkoutStatusChange) onWorkoutStatusChange(false, 0);
   };
@@ -400,7 +403,6 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
 
           <button
             onClick={() => {
-              setIsExecutingWorkout(false);
               setWorkoutFinishedSummary(null);
             }}
             className="w-full py-3.5 bg-accent hover:opacity-90 text-white font-bold text-sm rounded-xl transition-all shadow-lg"
@@ -748,25 +750,17 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
 
               {/* Recovery and Base weight controls */}
               <div className="flex items-center gap-3 justify-between sm:justify-end flex-wrap flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-800/60">
-                {/* Configurable Rest Seconds */}
+                {/* Configurable Rest Seconds (Clean Dropdown, no +/-) */}
                 <div className="text-left sm:text-right">
                   <span className="text-[10px] text-zinc-400 block font-mono flex items-center gap-1">
                     <Timer size={11} className="text-accent" />
                     <span>Recupero</span>
                   </span>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateRestSeconds(selectedDayIndex, idx, plannedEx.restSeconds - 15)}
-                      className="w-5 h-6 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded text-zinc-400 hover:text-white text-xs flex items-center justify-center font-bold"
-                      title="-15s"
-                    >
-                      -
-                    </button>
+                  <div className="mt-0.5">
                     <select
                       value={plannedEx.restSeconds}
-                      onChange={(e) => handleUpdateRestSeconds(selectedDayIndex, idx, parseInt(e.target.value) || 90)}
-                      className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-1 text-xs font-mono font-bold text-white focus:outline-none focus:border-accent cursor-pointer"
+                      onChange={(e) => handleUpdateRestSeconds(selectedDayIndex, idx, parseInt(e.target.value, 10) || 90)}
+                      className="bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-white focus:outline-none focus:border-accent cursor-pointer"
                     >
                       {[30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240].map((sec) => (
                         <option key={sec} value={sec}>
@@ -774,41 +768,77 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                         </option>
                       ))}
                     </select>
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateRestSeconds(selectedDayIndex, idx, plannedEx.restSeconds + 15)}
-                      className="w-5 h-6 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded text-zinc-400 hover:text-white text-xs flex items-center justify-center font-bold"
-                      title="+15s"
-                    >
-                      +
-                    </button>
                   </div>
                 </div>
 
-                {/* Base weight input */}
+                {/* Base weight input WITH +/- buttons */}
                 {isBw ? (
                   <div className="text-right">
                     <span className="text-[10px] text-zinc-400 block font-mono">Zavorra</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      value={plannedEx.targetWeightKg || ''}
-                      onChange={(e) =>
-                        handleRegulateBaseWeight(
-                          selectedDayIndex,
-                          idx,
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      placeholder="+0"
-                      className="w-16 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-center text-xs font-bold text-white focus:outline-none focus:border-accent"
-                    />
+                    <div className="flex items-center mt-0.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleRegulateBaseWeight(
+                            selectedDayIndex,
+                            idx,
+                            Math.max(0, (plannedEx.targetWeightKg || 0) - 2.5)
+                          )
+                        }
+                        className="w-6 h-7 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-l text-zinc-400 hover:text-white text-xs font-bold transition-colors"
+                        title="-2.5 kg"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={plannedEx.targetWeightKg || ''}
+                        onChange={(e) =>
+                          handleRegulateBaseWeight(
+                            selectedDayIndex,
+                            idx,
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                        placeholder="+0"
+                        className="w-12 h-7 bg-zinc-950 border-y border-zinc-800 text-center text-xs font-bold text-white focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleRegulateBaseWeight(
+                            selectedDayIndex,
+                            idx,
+                            (plannedEx.targetWeightKg || 0) + 2.5
+                          )
+                        }
+                        className="w-6 h-7 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-r text-zinc-400 hover:text-white text-xs font-bold transition-colors"
+                        title="+2.5 kg"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="text-right">
                     <span className="text-[10px] text-zinc-400 block font-mono">Carico base</span>
-                    <div className="flex items-center gap-1 mt-0.5">
+                    <div className="flex items-center mt-0.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleRegulateBaseWeight(
+                            selectedDayIndex,
+                            idx,
+                            Math.max(0, (plannedEx.targetWeightKg || 0) - 2.5)
+                          )
+                        }
+                        className="w-6 h-7 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-l text-zinc-400 hover:text-white text-xs font-bold transition-colors"
+                        title="-2.5 kg"
+                      >
+                        -
+                      </button>
                       <input
                         type="number"
                         step="0.5"
@@ -821,9 +851,23 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                             parseFloat(e.target.value) || 0
                           )
                         }
-                        className="w-16 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-center text-xs font-bold text-white focus:outline-none focus:border-accent"
+                        className="w-14 h-7 bg-zinc-950 border-y border-zinc-800 text-center text-xs font-bold text-white focus:outline-none"
                       />
-                      <span className="text-xs text-zinc-500 font-mono">kg</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleRegulateBaseWeight(
+                            selectedDayIndex,
+                            idx,
+                            (plannedEx.targetWeightKg || 0) + 2.5
+                          )
+                        }
+                        className="w-6 h-7 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-r text-zinc-400 hover:text-white text-xs font-bold transition-colors"
+                        title="+2.5 kg"
+                      >
+                        +
+                      </button>
+                      <span className="text-[10px] text-zinc-500 font-mono ml-1">kg</span>
                     </div>
                   </div>
                 )}

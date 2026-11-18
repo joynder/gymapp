@@ -8,6 +8,7 @@ import type {
   Routine,
   RoutineDay,
   UserPreferences,
+  WorkoutSession,
 } from '../types';
 
 export function isExerciseAvailable(
@@ -110,9 +111,72 @@ export function calculateBaseWeight(
 }
 
 /**
- * Main routine generation strictly adhering to selected frequency (days) and target duration
+ * Computes weights and target reps considering real past workout performance and progressive overload
  */
-export function generateRoutine(preferences: UserPreferences): Routine {
+export function getHistoricalTarget(
+  exercise: Exercise,
+  sessions: WorkoutSession[] | undefined,
+  bodyWeightKg: number,
+  experienceLevel: 'Principiante' | 'Intermedio' | 'Avanzato',
+  goal: GoalType,
+  defaultReps: string
+): { targetWeightKg: number; reps: string } {
+  const isBw = exercise.isBodyweight || false;
+
+  if (sessions && sessions.length > 0) {
+    // Scan sessions from newest to oldest
+    for (const session of sessions) {
+      const exLog = session.exercises.find((e) => e.exerciseId === exercise.id);
+      if (exLog && exLog.sets && exLog.sets.length > 0) {
+        const completedSets = exLog.sets.filter((s) => s.completed);
+        if (completedSets.length > 0) {
+          const bestSet = completedSets.reduce((prev, curr) =>
+            curr.weightKg > prev.weightKg ? curr : prev
+          );
+
+          let baseWeight = bestSet.weightKg;
+
+          // Progressive overload: if completed with success, stimulate reasonable micro-progression
+          const allCompleted = completedSets.length >= exLog.sets.length;
+          if (allCompleted) {
+            if (isBw) {
+              if (baseWeight > 0) {
+                baseWeight = Math.round((baseWeight + 1) * 2) / 2;
+              }
+            } else if (baseWeight >= 20) {
+              // Progression of +2.5 kg on heavy barbell / machine compound
+              baseWeight = Math.round((baseWeight + 2.5) / 2.5) * 2.5;
+            } else if (baseWeight > 0) {
+              // +1 kg or +1.25 kg for dumbbells / isolation
+              baseWeight = Math.round((baseWeight + 1.25) * 2) / 2;
+            }
+          }
+
+          return {
+            targetWeightKg: Math.max(0, baseWeight),
+            reps: defaultReps,
+          };
+        }
+      }
+    }
+  }
+
+  // Fallback to estimated weight if no history exists for this exercise
+  const fallbackWeight = calculateBaseWeight(exercise, bodyWeightKg, experienceLevel, goal);
+  return {
+    targetWeightKg: fallbackWeight,
+    reps: defaultReps,
+  };
+}
+
+/**
+ * Main routine generation strictly adhering to selected frequency (days), target duration,
+ * and calibrated upon actual historical workout performance.
+ */
+export function generateRoutine(
+  preferences: UserPreferences,
+  sessions?: WorkoutSession[]
+): Routine {
   const available = getFeasibleExercises(preferences.availableEquipment);
   const preferredIds = preferences.preferredExerciseIds || [];
   const { splitType, goal, lifestyle, bodyWeightKg, experienceLevel } = preferences;
@@ -120,12 +184,6 @@ export function generateRoutine(preferences: UserPreferences): Routine {
   const frequencyDays = Math.max(2, Math.min(6, preferences.frequencyDays || 3));
   const targetDuration = preferences.workoutDurationMinutes || 60;
 
-  // Exercise count scaling based on target duration (minutes)
-  // 30 min: ~3-4 exercises
-  // 45 min: ~4-5 exercises
-  // 60 min: ~6-7 exercises
-  // 75 min: ~7-8 exercises
-  // 90 min: ~8-9 exercises
   let targetExercisesPerDay = 6;
   if (targetDuration <= 35) {
     targetExercisesPerDay = 3;
@@ -141,13 +199,20 @@ export function generateRoutine(preferences: UserPreferences): Routine {
 
   const createPlannedEx = (ex: Exercise): PlannedExercise => {
     const params = getRepsAndRestForGoalAndLifestyle(ex, goal, lifestyle);
-    const targetWeightKg = calculateBaseWeight(ex, bodyWeightKg, experienceLevel, goal);
+    const historical = getHistoricalTarget(
+      ex,
+      sessions,
+      bodyWeightKg,
+      experienceLevel,
+      goal,
+      params.reps
+    );
 
     return {
       exerciseId: ex.id,
       sets: params.sets,
-      reps: params.reps,
-      targetWeightKg,
+      reps: historical.reps,
+      targetWeightKg: historical.targetWeightKg,
       isBodyweight: ex.isBodyweight || false,
       restSeconds: params.restSeconds,
     };
