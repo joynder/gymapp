@@ -2,6 +2,7 @@ import type {
   AppDatabase,
   OngoingWorkoutState,
   Routine,
+  ThemeColor,
   UserAccount,
   UserPreferences,
   WorkoutSession,
@@ -239,6 +240,21 @@ export function deleteUserAccount(userId: string): void {
   } catch {}
 }
 
+export function cycleUserTheme(userId: string): ThemeColor {
+  const db = getAppDatabase();
+  const user = db.users[userId];
+  const THEME_ORDER: ThemeColor[] = ['orange', 'green', 'pink', 'blue'];
+  if (!user) return 'orange';
+  const current = user.preferences?.themeColor || 'orange';
+  const nextTheme = THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length];
+  if (!user.preferences) {
+    user.preferences = { ...DEFAULT_PREFERENCES };
+  }
+  user.preferences.themeColor = nextTheme;
+  saveAppDatabase(db);
+  return nextTheme;
+}
+
 export function updateActiveUser(updater: (user: UserAccount) => UserAccount): UserAccount | null {
   const db = getAppDatabase();
   if (!db.activeUserId || !db.users[db.activeUserId]) {
@@ -358,6 +374,50 @@ export function getExerciseHistory(exerciseId: string): {
     }
   }
   return history;
+}
+
+// Synchronizes all planned exercise base weights in the routine with the latest recorded performance
+export function syncRoutineWeightsWithHistory(routine: Routine): { updatedRoutine: Routine; updatedCount: number } {
+  const sessions = loadWorkoutSessions();
+  let updatedCount = 0;
+
+  const updatedDays = routine.days.map((day) => {
+    const updatedExercises = day.exercises.map((planned) => {
+      for (const session of sessions) {
+        const exLog = session.exercises.find((e) => e.exerciseId === planned.exerciseId);
+        if (exLog && exLog.sets && exLog.sets.length > 0) {
+          const completedSets = exLog.sets.filter((s) => s.completed);
+          if (completedSets.length > 0) {
+            const bestSet = completedSets.reduce((prev, curr) =>
+              curr.weightKg > prev.weightKg ? curr : prev
+            );
+            if (bestSet.weightKg !== undefined && bestSet.weightKg !== planned.targetWeightKg) {
+              updatedCount++;
+              return {
+                ...planned,
+                targetWeightKg: bestSet.weightKg,
+              };
+            }
+            break;
+          }
+        }
+      }
+      return planned;
+    });
+
+    return {
+      ...day,
+      exercises: updatedExercises,
+    };
+  });
+
+  const updatedRoutine: Routine = {
+    ...routine,
+    days: updatedDays,
+  };
+
+  saveActiveRoutine(updatedRoutine);
+  return { updatedRoutine, updatedCount };
 }
 
 // Backup and JSON exporter for history

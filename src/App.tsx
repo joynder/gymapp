@@ -18,6 +18,7 @@ import {
   loadWorkoutSessions,
   saveActiveRoutine,
   saveUserPreferences,
+  cycleUserTheme,
 } from './utils/storage';
 import { generateRoutine } from './utils/routineGenerator';
 import { Navbar } from './components/Navbar';
@@ -91,6 +92,15 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
   };
 
+  const handleCycleAccountTheme = (accountId: string) => {
+    const nextTheme = cycleUserTheme(accountId);
+    setAccounts(listUserAccounts());
+    if (activeUser && activeUser.id === accountId) {
+      setPreferences((prev) => ({ ...prev, themeColor: nextTheme }));
+    }
+    document.documentElement.setAttribute('data-theme', nextTheme);
+  };
+
   // Generate routine calibrating upon user's historical performance & progressive overload
   const handleGenerateRoutine = (updatedPrefs: UserPreferences) => {
     handleSavePreferences(updatedPrefs);
@@ -136,6 +146,7 @@ export default function App() {
         onSelectAccount={handleSelectAccount}
         onCreateAccount={handleCreateAccount}
         onDeleteAccount={handleDeleteAccount}
+        onCycleAccountTheme={handleCycleAccountTheme}
       />
     );
   }

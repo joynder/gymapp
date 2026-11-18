@@ -16,6 +16,7 @@ import {
   saveWorkoutSession,
   loadOngoingWorkout,
   saveOngoingWorkout,
+  syncRoutineWeightsWithHistory,
 } from '../utils/storage';
 import { AIAssistantWizard } from './AIAssistantWizard';
 import {
@@ -42,7 +43,7 @@ interface RoutineViewProps {
   onOpenPreferences: () => void;
   onOpenExerciseModal: (ex: Exercise) => void;
   onUpdateRoutine: (routine: Routine) => void;
-  onRegenerate: () => void;
+  onRegenerate?: () => void;
   onTriggerRestTimer: (seconds: number) => void;
   onGenerateWithAI: (prefs: UserPreferences) => void;
   onWorkoutStatusChange?: (isRunning: boolean, seconds: number) => void;
@@ -54,7 +55,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
   onOpenPreferences,
   onOpenExerciseModal,
   onUpdateRoutine,
-  onRegenerate,
+  onRegenerate: _onRegenerate,
   onTriggerRestTimer,
   onGenerateWithAI,
   onWorkoutStatusChange,
@@ -63,6 +64,8 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [addSearch, setAddSearch] = useState('');
   const [showAIWizard, setShowAIWizard] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [isSyncingWeights, setIsSyncingWeights] = useState(false);
 
   // Active workout execution state (persisted across tab changes & refreshes)
   const [isExecutingWorkout, setIsExecutingWorkout] = useState(false);
@@ -369,6 +372,23 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
     const mins = Math.floor(totalSec / 60);
     const secs = totalSec % 60;
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Aggiorna solamente i pesi dei carichi in base allo storico degli allenamenti
+  const handleUpdateWeightsOnly = () => {
+    if (!routine) return;
+    setIsSyncingWeights(true);
+    const { updatedRoutine, updatedCount } = syncRoutineWeightsWithHistory(routine);
+    onUpdateRoutine(updatedRoutine);
+    if (updatedCount > 0) {
+      setSyncFeedback(
+        `✓ ${updatedCount} ${updatedCount === 1 ? 'carico aggiornato' : 'carichi aggiornati'} dallo storico!`
+      );
+    } else {
+      setSyncFeedback('✓ I carichi sono già allineati allo storico più recente.');
+    }
+    setTimeout(() => setIsSyncingWeights(false), 500);
+    setTimeout(() => setSyncFeedback(null), 3500);
   };
 
   // Workout Summary Overlay if finished
@@ -713,11 +733,12 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
           </button>
 
           <button
-            onClick={onRegenerate}
-            title="Rigenera con parametri attuali"
+            type="button"
+            onClick={handleUpdateWeightsOnly}
+            title="Aggiorna solamente i carichi in base allo storico"
             className="p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-zinc-400 hover:text-white transition-colors"
           >
-            <RotateCcw size={15} />
+            <RotateCcw size={15} className={isSyncingWeights ? 'animate-spin text-accent' : ''} />
           </button>
 
           <button
@@ -729,6 +750,20 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Sync feedback notification banner */}
+      {syncFeedback && (
+        <div className="p-3 bg-accent-subtle border border-accent/50 rounded-xl text-xs font-semibold text-accent flex items-center justify-between animate-in fade-in">
+          <span>{syncFeedback}</span>
+          <button
+            type="button"
+            onClick={() => setSyncFeedback(null)}
+            className="text-zinc-400 hover:text-white ml-2"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Exercises list for the selected day */}
       <div className="space-y-3">

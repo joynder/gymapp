@@ -7,13 +7,22 @@ interface AccountSelectionViewProps {
   onSelectAccount: (accountId: string) => void;
   onCreateAccount: (name: string, weightKg: number) => void;
   onDeleteAccount: (accountId: string) => void;
+  onCycleAccountTheme?: (accountId: string) => void;
 }
+
+const themeHexMap: Record<string, string> = {
+  orange: '#f97316',
+  green: '#22c55e',
+  pink: '#ec4899',
+  blue: '#0ea5e9',
+};
 
 export const AccountSelectionView: React.FC<AccountSelectionViewProps> = ({
   accounts,
   onSelectAccount,
   onCreateAccount,
   onDeleteAccount,
+  onCycleAccountTheme,
 }) => {
   const [newName, setNewName] = useState('');
   const [newWeight, setNewWeight] = useState(75);
@@ -62,8 +71,21 @@ export const AccountSelectionView: React.FC<AccountSelectionViewProps> = ({
                     className="group bg-zinc-900/90 hover:bg-zinc-800/90 border border-zinc-800 hover:border-accent-border rounded-2xl p-4 transition-all duration-200 cursor-pointer flex items-center justify-between shadow-lg"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="w-11 h-11 rounded-xl bg-accent-subtle border border-accent-border flex items-center justify-center text-accent font-bold text-lg flex-shrink-0 group-hover:scale-105 transition-transform">
-                        {acc.name.charAt(0).toUpperCase()}
+                      <div
+                        onClick={(e) => {
+                          if (onCycleAccountTheme) {
+                            e.stopPropagation();
+                            onCycleAccountTheme(acc.id);
+                          }
+                        }}
+                        title="Clicca sull'icona per cambiare colore"
+                        className="w-11 h-11 rounded-xl bg-accent-subtle border border-accent-border flex items-center justify-center text-accent font-bold text-lg flex-shrink-0 group-hover:scale-105 active:scale-90 transition-transform cursor-pointer relative"
+                      >
+                        <span>{acc.name.charAt(0).toUpperCase()}</span>
+                        <span
+                          className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-black"
+                          style={{ backgroundColor: themeHexMap[acc.preferences?.themeColor || 'orange'] }}
+                        />
                       </div>
                       <div className="min-w-0">
                         <h3 className="font-bold text-white text-base group-hover:text-accent transition-colors truncate">
