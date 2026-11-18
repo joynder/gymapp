@@ -25,20 +25,14 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
     ? Math.round(lastPerf.weightKg * (1 + lastPerf.reps / 30) * 10) / 10
     : null;
 
-  // Strength Level standard values for this user's weight
+  // Strength Level standard values for this user's weight (Principiante, Intermedio, Elite)
   const standards = {
     beginner: isBw
       ? `${exercise.strengthStandards.beginner} reps`
       : `${Math.round(bw * exercise.strengthStandards.beginner)} kg`,
-    novice: isBw
-      ? `${exercise.strengthStandards.novice} reps`
-      : `${Math.round(bw * exercise.strengthStandards.novice)} kg`,
     intermediate: isBw
       ? `${exercise.strengthStandards.intermediate} reps`
       : `${Math.round(bw * exercise.strengthStandards.intermediate)} kg`,
-    advanced: isBw
-      ? `${exercise.strengthStandards.advanced} reps`
-      : `${Math.round(bw * exercise.strengthStandards.advanced)} kg`,
     elite: isBw
       ? `${exercise.strengthStandards.elite} reps`
       : `${Math.round(bw * exercise.strengthStandards.elite)} kg`,
@@ -108,27 +102,21 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
               </span>
             </div>
 
-            {/* Standards Level Grid */}
-            <div className="grid grid-cols-5 gap-1.5 text-center text-xs">
-              <div className="p-2 bg-black rounded-xl border border-zinc-800">
-                <div className="text-zinc-500 uppercase text-[10px]">Principiante</div>
-                <div className="text-white font-bold mt-0.5">{standards.beginner}</div>
+            {/* Standards Level Grid - Mobile Optimized (3 clean columns, no clipping) */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
+              <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex flex-col justify-center">
+                <div className="text-zinc-400 font-semibold text-xs tracking-wide">Principiante</div>
+                <div className="text-white font-extrabold text-sm sm:text-base mt-1 font-mono">{standards.beginner}</div>
               </div>
-              <div className="p-2 bg-black rounded-xl border border-zinc-800">
-                <div className="text-zinc-400 uppercase text-[10px]">Novizio</div>
-                <div className="text-white font-bold mt-0.5">{standards.novice}</div>
+
+              <div className="p-3 bg-accent-subtle/40 rounded-xl border border-accent flex flex-col justify-center">
+                <div className="text-accent font-bold text-xs tracking-wide">Intermedio</div>
+                <div className="text-white font-extrabold text-sm sm:text-base mt-1 font-mono">{standards.intermediate}</div>
               </div>
-              <div className="p-2 bg-black rounded-xl border border-accent/60 bg-accent/10">
-                <div className="text-accent uppercase text-[10px] font-bold">Intermedio</div>
-                <div className="text-white font-bold mt-0.5">{standards.intermediate}</div>
-              </div>
-              <div className="p-2 bg-black rounded-xl border border-zinc-800">
-                <div className="text-zinc-400 uppercase text-[10px]">Avanzato</div>
-                <div className="text-white font-bold mt-0.5">{standards.advanced}</div>
-              </div>
-              <div className="p-2 bg-black rounded-xl border border-zinc-800">
-                <div className="text-zinc-500 uppercase text-[10px]">Elite</div>
-                <div className="text-white font-bold mt-0.5">{standards.elite}</div>
+
+              <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex flex-col justify-center">
+                <div className="text-zinc-400 font-semibold text-xs tracking-wide">Elite</div>
+                <div className="text-white font-extrabold text-sm sm:text-base mt-1 font-mono">{standards.elite}</div>
               </div>
             </div>
 

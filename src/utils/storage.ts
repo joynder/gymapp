@@ -8,10 +8,16 @@ import type {
 } from '../types';
 
 const STORAGE_DB_KEY = 'gymapp_multiuser_database_v3';
-const LEGACY_V2_KEY = 'gymapp_multiuser_database_v2';
-const LEGACY_PREF_KEY = 'gymapp_preferences_v1';
-const LEGACY_ROUTINE_KEY = 'gymapp_routine_v1';
-const LEGACY_SESSIONS_KEY = 'gymapp_sessions_v1';
+const BACKUP_MIRROR_KEY = 'gymapp_database_backup_mirror';
+const LEGACY_KEYS = [
+  'gymapp_multiuser_database_v3',
+  'gymapp_multiuser_database_v2',
+  'gymapp_multiuser_database_v1',
+  'gymapp_multiuser_database',
+  'gymapp_preferences_v1',
+  'gymapp_routine_v1',
+  'gymapp_sessions_v1',
+];
 const ONGOING_WORKOUT_PREFIX = 'gymapp_ongoing_workout_';
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
@@ -48,35 +54,60 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
 };
 
 function createInitialDatabase(): AppDatabase {
-  // Check if we have legacy single-user or v2 data to migrate
+  // Scans all possible past legacy and mirror keys to never lose historical user data
   let initialPrefs = DEFAULT_PREFERENCES;
   let initialRoutine: Routine | null = null;
   let initialSessions: WorkoutSession[] = [];
   let initialName = 'Atleta 1';
+  let recoveredUsers: Record<string, UserAccount> | null = null;
+  let recoveredActiveId: string | null = null;
 
   try {
-    const rawV2 = localStorage.getItem(LEGACY_V2_KEY);
-    if (rawV2) {
-      const parsed = JSON.parse(rawV2);
-      if (parsed && parsed.users) {
-        const u = parsed.users[parsed.activeUserId] || Object.values(parsed.users)[0];
-        if (u) {
-          if (u.name) initialName = u.name;
-          if (u.preferences) initialPrefs = { ...DEFAULT_PREFERENCES, ...u.preferences };
-          if (u.routine) initialRoutine = u.routine;
-          if (u.sessions && Array.isArray(u.sessions)) initialSessions = u.sessions;
+    // 1. Try reading mirror backup first if main failed
+    const rawMirror = localStorage.getItem(BACKUP_MIRROR_KEY);
+    if (rawMirror) {
+      const parsed = JSON.parse(rawMirror);
+      if (parsed && parsed.users && Object.keys(parsed.users).length > 0) {
+        recoveredUsers = parsed.users;
+        recoveredActiveId = parsed.activeUserId || Object.keys(parsed.users)[0];
+      }
+    }
+
+    // 2. Check all previous multi-user database versions
+    if (!recoveredUsers) {
+      for (const legacyKey of LEGACY_KEYS) {
+        const raw = localStorage.getItem(legacyKey);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.users && typeof parsed.users === 'object' && Object.keys(parsed.users).length > 0) {
+              recoveredUsers = parsed.users;
+              recoveredActiveId = parsed.activeUserId || Object.keys(parsed.users)[0];
+              break;
+            }
+          } catch {}
         }
       }
-    } else {
-      const rawPref = localStorage.getItem(LEGACY_PREF_KEY);
+    }
+
+    // 3. Fallback to single-user legacy keys
+    if (!recoveredUsers) {
+      const rawPref = localStorage.getItem('gymapp_preferences_v1');
       if (rawPref) initialPrefs = { ...DEFAULT_PREFERENCES, ...JSON.parse(rawPref) };
-      const rawRoutine = localStorage.getItem(LEGACY_ROUTINE_KEY);
+      const rawRoutine = localStorage.getItem('gymapp_routine_v1');
       if (rawRoutine) initialRoutine = JSON.parse(rawRoutine);
-      const rawSess = localStorage.getItem(LEGACY_SESSIONS_KEY);
+      const rawSess = localStorage.getItem('gymapp_sessions_v1');
       if (rawSess) initialSessions = JSON.parse(rawSess);
     }
   } catch (e) {
-    console.error('Error in migration check', e);
+    console.error('Error during data recovery check', e);
+  }
+
+  if (recoveredUsers && Object.keys(recoveredUsers).length > 0) {
+    return {
+      activeUserId: recoveredActiveId || Object.keys(recoveredUsers)[0],
+      users: recoveredUsers,
+    };
   }
 
   const defaultId = 'user_' + Date.now();
@@ -103,7 +134,12 @@ export function getAppDatabase(): AppDatabase {
     const raw = localStorage.getItem(STORAGE_DB_KEY);
     if (raw) {
       const db: AppDatabase = JSON.parse(raw);
-      if (db && db.users && typeof db.users === 'object') {
+      if (db && db.users && typeof db.users === 'object' && Object.keys(db.users).length > 0) {
+        // If active user is invalid or deleted, point to first available
+        if (db.activeUserId && !db.users[db.activeUserId]) {
+          db.activeUserId = Object.keys(db.users)[0];
+          saveAppDatabase(db);
+        }
         return db;
       }
     }
@@ -118,7 +154,10 @@ export function getAppDatabase(): AppDatabase {
 
 export function saveAppDatabase(db: AppDatabase): void {
   try {
-    localStorage.setItem(STORAGE_DB_KEY, JSON.stringify(db));
+    const serialized = JSON.stringify(db);
+    localStorage.setItem(STORAGE_DB_KEY, serialized);
+    // Double persistent mirror backup to guarantee zero data loss
+    localStorage.setItem(BACKUP_MIRROR_KEY, serialized);
   } catch (e) {
     console.error('Error saving AppDatabase', e);
   }

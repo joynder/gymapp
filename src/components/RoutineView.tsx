@@ -431,6 +431,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
       0
     );
     const totalCount = exerciseLogs.reduce((count, ex) => count + ex.sets.length, 0);
+    const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
     return (
       <div className="max-w-4xl mx-auto space-y-4 pb-28 text-zinc-100">
@@ -472,6 +473,33 @@ export const RoutineView: React.FC<RoutineViewProps> = ({
                 <X size={14} />
                 <span className="hidden sm:inline">Annulla</span>
               </button>
+            </div>
+          </div>
+
+          {/* Workout Progress Bar & Percent Indicator */}
+          <div className="mt-3 pt-2.5 border-t border-zinc-800/80 space-y-1.5">
+            <div className="flex items-center justify-between text-xs font-mono">
+              <span className="text-zinc-300 font-semibold flex items-center gap-1.5">
+                <span>Progresso:</span>
+                <span className={`font-bold ${progressPercent === 100 ? 'text-green-400' : 'text-accent'}`}>
+                  {progressPercent}%
+                </span>
+                {progressPercent === 100 && (
+                  <span className="text-[10px] text-green-400 font-normal">🎉 Completato!</span>
+                )}
+              </span>
+              <span className="text-[11px] text-zinc-400 font-medium">
+                {completedCount} di {totalCount} serie
+              </span>
+            </div>
+
+            <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  progressPercent === 100 ? 'bg-green-500' : 'bg-accent'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
+              />
             </div>
           </div>
         </div>
